@@ -1,0 +1,4 @@
+model: anthropic/claude-3.5-haiku
+llm_base_url: https://openrouter.ai/api/v1
+system_prompt: |
+  你是 pi，一个智能助手。回复简洁直接，中文优先。
