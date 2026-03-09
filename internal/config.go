@@ -8,7 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// clipBase returns the clip root directory (parent of bin/).
 func clipBase() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -17,11 +16,19 @@ func clipBase() string {
 	return filepath.Dir(filepath.Dir(exe))
 }
 
+type ClipConfig struct {
+	Name     string   `yaml:"name" json:"name"`
+	URL      string   `yaml:"url" json:"url"`
+	Token    string   `yaml:"token" json:"-"`
+	Commands []string `yaml:"commands,omitempty" json:"commands,omitempty"` // cached from GetInfo
+}
+
 type Config struct {
-	Model        string `yaml:"model"`
-	LLMBaseURL   string `yaml:"llm_base_url"`
-	APIKey       string `yaml:"api_key"`
-	SystemPrompt string `yaml:"system_prompt"`
+	Model        string       `yaml:"model"`
+	LLMBaseURL   string       `yaml:"llm_base_url"`
+	APIKey       string       `yaml:"api_key"`
+	SystemPrompt string       `yaml:"system_prompt"`
+	Clips        []ClipConfig `yaml:"clips,omitempty"`
 }
 
 func (c *Config) GetAPIKey() string {
@@ -29,6 +36,15 @@ func (c *Config) GetAPIKey() string {
 		return key
 	}
 	return c.APIKey
+}
+
+func (c *Config) GetClip(name string) *ClipConfig {
+	for i := range c.Clips {
+		if c.Clips[i].Name == name {
+			return &c.Clips[i]
+		}
+	}
+	return nil
 }
 
 func LoadConfig() (*Config, error) {

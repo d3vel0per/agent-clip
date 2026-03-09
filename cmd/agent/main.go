@@ -150,6 +150,7 @@ func runSync(db *sql.DB, topicID, message string, out internal.Output) error {
 	}
 
 	registry := internal.NewRegistry()
+			internal.RegisterClipCommands(registry, cfg)
 	rc := &internal.RunContext{DB: db, RunID: run.ID}
 
 	newMsgs, err := internal.RunLoop(cfg, history, message, registry, out, rc)
@@ -228,6 +229,7 @@ func workerCmd() *cobra.Command {
 			}
 
 			registry := internal.NewRegistry()
+			internal.RegisterClipCommands(registry, cfg)
 			out := internal.AsyncFileOutput(runID)
 			rc := &internal.RunContext{DB: db, RunID: runID}
 
