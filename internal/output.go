@@ -47,7 +47,7 @@ func (o *CLIOutput) ToolCall(name, args string) {
 }
 
 func (o *CLIOutput) ToolResult(content string) {
-	fmt.Fprintf(o.err, "  → %s\n", truncate(content, 120))
+	fmt.Fprintf(o.err, "  → %s\n", content)
 }
 
 func (o *CLIOutput) Inject(content string) {
