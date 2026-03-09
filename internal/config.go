@@ -16,26 +16,55 @@ func clipBase() string {
 	return filepath.Dir(filepath.Dir(exe))
 }
 
+type ProviderConfig struct {
+	BaseURL string `yaml:"base_url"`
+	APIKey  string `yaml:"api_key"`
+}
+
 type ClipConfig struct {
 	Name     string   `yaml:"name" json:"name"`
 	URL      string   `yaml:"url" json:"url"`
 	Token    string   `yaml:"token" json:"-"`
-	Commands []string `yaml:"commands,omitempty" json:"commands,omitempty"` // cached from GetInfo
+	Commands []string `yaml:"commands,omitempty" json:"commands,omitempty"`
+}
+
+type BrowserConfig struct {
+	Endpoint string `yaml:"endpoint"`
 }
 
 type Config struct {
-	Model        string       `yaml:"model"`
-	LLMBaseURL   string       `yaml:"llm_base_url"`
-	APIKey       string       `yaml:"api_key"`
-	SystemPrompt string       `yaml:"system_prompt"`
-	Clips        []ClipConfig `yaml:"clips,omitempty"`
+	Providers map[string]ProviderConfig `yaml:"providers"`
+
+	LLMProvider string `yaml:"llm_provider"`
+	LLMModel    string `yaml:"llm_model"`
+
+	EmbeddingProvider string `yaml:"embedding_provider"`
+	EmbeddingModel    string `yaml:"embedding_model"`
+
+	SystemPrompt string         `yaml:"system_prompt"`
+	Clips        []ClipConfig   `yaml:"clips,omitempty"`
+	Browser      *BrowserConfig `yaml:"browser,omitempty"`
 }
 
-func (c *Config) GetAPIKey() string {
-	if key := os.Getenv("OPENROUTER_API_KEY"); key != "" {
-		return key
+func (c *Config) GetLLMProvider() (*ProviderConfig, error) {
+	return c.getProvider(c.LLMProvider)
+}
+
+func (c *Config) GetEmbeddingProvider() (*ProviderConfig, error) {
+	return c.getProvider(c.EmbeddingProvider)
+}
+
+func (c *Config) getProvider(name string) (*ProviderConfig, error) {
+	p, ok := c.Providers[name]
+	if !ok {
+		return nil, fmt.Errorf("provider %q not found in config", name)
 	}
-	return c.APIKey
+	// env override: OPENROUTER_API_KEY, BAILIAN_API_KEY, etc.
+	envKey := os.Getenv("OPENROUTER_API_KEY")
+	if envKey != "" && name == "openrouter" {
+		p.APIKey = envKey
+	}
+	return &p, nil
 }
 
 func (c *Config) GetClip(name string) *ClipConfig {

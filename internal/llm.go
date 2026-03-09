@@ -98,13 +98,16 @@ type streamChunk struct {
 // CallLLM sends a streaming request and returns text content and/or tool calls.
 // Text tokens are passed to onToken as they arrive.
 func CallLLM(cfg *Config, messages []Message, tools []ToolDef, onToken func(string)) (*LLMResponse, error) {
-	apiKey := cfg.GetAPIKey()
-	if apiKey == "" {
-		return nil, fmt.Errorf("OPENROUTER_API_KEY not set and no api_key in config")
+	provider, err := cfg.GetLLMProvider()
+	if err != nil {
+		return nil, err
+	}
+	if provider.APIKey == "" {
+		return nil, fmt.Errorf("no api_key for llm provider %q", cfg.LLMProvider)
 	}
 
 	body, err := json.Marshal(chatRequest{
-		Model:    cfg.Model,
+		Model:    cfg.LLMModel,
 		Messages: messages,
 		Tools:    tools,
 		Stream:   true,
@@ -113,12 +116,12 @@ func CallLLM(cfg *Config, messages []Message, tools []ToolDef, onToken func(stri
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := cfg.LLMBaseURL + "/chat/completions"
+	url := provider.BaseURL + "/chat/completions"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)

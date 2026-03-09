@@ -10,8 +10,6 @@ import (
 	"math"
 )
 
-const embeddingModel = "openai/text-embedding-3-small"
-
 type embeddingRequest struct {
 	Model string   `json:"model"`
 	Input []string `json:"input"`
@@ -25,25 +23,28 @@ type embeddingResponse struct {
 
 // GetEmbedding returns the embedding vector for a text string.
 func GetEmbedding(cfg *Config, text string) ([]float32, error) {
-	apiKey := cfg.GetAPIKey()
-	if apiKey == "" {
-		return nil, fmt.Errorf("no API key for embedding")
+	provider, err := cfg.GetEmbeddingProvider()
+	if err != nil {
+		return nil, err
+	}
+	if provider.APIKey == "" {
+		return nil, fmt.Errorf("no api_key for embedding provider %q", cfg.EmbeddingProvider)
 	}
 
 	body, err := json.Marshal(embeddingRequest{
-		Model: embeddingModel,
+		Model: cfg.EmbeddingModel,
 		Input: []string{text},
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	url := cfg.LLMBaseURL + "/embeddings"
+	url := provider.BaseURL + "/embeddings"
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)

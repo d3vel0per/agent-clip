@@ -21,13 +21,13 @@ type Summary struct {
 	CreatedAt   int64   `json:"created_at"`
 }
 
-func StoreSummary(db *sql.DB, topicID, runID, summary, userMessage string, embedding []float32) error {
+func StoreSummary(db *sql.DB, topicID, runID, summary, userMessage string, embedding []float32, embeddingModel string) error {
 	var embBlob []byte
 	if len(embedding) > 0 {
 		embBlob = EncodeEmbedding(embedding)
 	}
-	_, err := db.Exec(`INSERT INTO summaries (topic_id, run_id, summary, user_message, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		topicID, runID, summary, userMessage, embBlob, time.Now().Unix())
+	_, err := db.Exec(`INSERT INTO summaries (topic_id, run_id, summary, user_message, embedding, embedding_model, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		topicID, runID, summary, userMessage, embBlob, embeddingModel, time.Now().Unix())
 	return err
 }
 
@@ -376,5 +376,5 @@ func ProcessMemory(db *sql.DB, cfg *Config, topicID, runID string, newMsgs []Mes
 	}
 
 	embedding, _ := GetEmbedding(cfg, summary)
-	StoreSummary(db, topicID, runID, summary, userMessage, embedding)
+	StoreSummary(db, topicID, runID, summary, userMessage, embedding, cfg.EmbeddingModel)
 }

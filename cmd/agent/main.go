@@ -45,6 +45,7 @@ func getOutput() internal.Output {
 func buildRegistry(db *sql.DB, cfg *internal.Config) *internal.Registry {
 	registry := internal.NewRegistry()
 	internal.RegisterClipCommands(registry, cfg)
+	internal.RegisterBrowserCommands(registry, cfg)
 	internal.RegisterMemoryCommands(registry, db, cfg)
 	internal.RegisterTopicCommands(registry, db, cfg)
 	return registry

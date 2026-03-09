@@ -96,16 +96,26 @@ func RunLoop(cfg *Config, ctx *ContextResult, registry *Registry, out Output, rc
 }
 
 func execToolCall(registry *Registry, tc ToolCall) string {
-	if tc.Function.Name != "run" {
-		return fmt.Sprintf("[error] unknown tool: %s", tc.Function.Name)
-	}
-
 	var args struct {
 		Command string `json:"command"`
 		Stdin   string `json:"stdin"`
 	}
 	if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
 		return fmt.Sprintf("[error] parse arguments: %v", err)
+	}
+
+	// If LLM uses a command name as the tool name instead of "run",
+	// prepend it to the command string.
+	if tc.Function.Name != "run" {
+		cmd := tc.Function.Name
+		if args.Command != "" {
+			cmd += " " + args.Command
+		}
+		args.Command = cmd
+	}
+
+	if args.Command == "" {
+		return "[error] empty command"
 	}
 
 	return registry.Exec(args.Command, args.Stdin)

@@ -37,9 +37,10 @@ func OpenDB() (*sql.DB, error) {
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 
-	// migrate: add run_id column if missing
+	// migrate: add columns if missing
 	db.Exec("ALTER TABLE messages ADD COLUMN run_id TEXT")
 	db.Exec("ALTER TABLE summaries ADD COLUMN run_id TEXT")
+	db.Exec("ALTER TABLE summaries ADD COLUMN embedding_model TEXT")
 
 	return db, nil
 }

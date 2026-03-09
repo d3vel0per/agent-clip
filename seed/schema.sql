@@ -37,13 +37,14 @@ CREATE TABLE IF NOT EXISTS run_inbox (
 );
 
 CREATE TABLE IF NOT EXISTS summaries (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    topic_id      TEXT NOT NULL REFERENCES topics(id),
-    run_id        TEXT,
-    summary       TEXT NOT NULL,
-    user_message  TEXT NOT NULL,
-    embedding     BLOB,
-    created_at    INTEGER NOT NULL
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic_id         TEXT NOT NULL REFERENCES topics(id),
+    run_id           TEXT,
+    summary          TEXT NOT NULL,
+    user_message     TEXT NOT NULL,
+    embedding        BLOB,
+    embedding_model  TEXT,
+    created_at       INTEGER NOT NULL
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS summaries_fts USING fts5(
