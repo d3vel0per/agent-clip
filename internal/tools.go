@@ -251,3 +251,84 @@ func memoryFacts(db *sql.DB) (string, error) {
 	}
 	return b.String(), nil
 }
+
+// RegisterTopicCommands adds topic management commands to the registry.
+func RegisterTopicCommands(r *Registry, db *sql.DB) {
+	r.Register("topic", `Manage conversation topics.
+  topic list                   — list all topics
+  topic info <id>              — show topic details
+  topic rename <id> <new-name> — rename a topic
+  topic current                — show current topic (if in one)`,
+		func(args []string, stdin string) (string, error) {
+			if len(args) == 0 {
+				return "", fmt.Errorf("usage: topic list|info|rename|current")
+			}
+
+			switch args[0] {
+			case "list":
+				return topicList(db)
+
+			case "info":
+				if len(args) < 2 {
+					return "", fmt.Errorf("usage: topic info <id>")
+				}
+				return topicInfo(db, args[1])
+
+			case "rename":
+				if len(args) < 3 {
+					return "", fmt.Errorf("usage: topic rename <id> <new-name>")
+				}
+				newName := strings.Join(args[2:], " ")
+				if err := RenameTopic(db, args[1], newName); err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("topic %s renamed to %q", args[1], newName), nil
+
+			case "current":
+				return "Use the topic ID from your current conversation context.", nil
+
+			default:
+				return "", fmt.Errorf("unknown: topic %s. Use: list|info|rename", args[0])
+			}
+		})
+}
+
+func topicList(db *sql.DB) (string, error) {
+	topics, err := ListTopics(db)
+	if err != nil {
+		return "", err
+	}
+	if len(topics) == 0 {
+		return "No topics.", nil
+	}
+
+	var b strings.Builder
+	for _, t := range topics {
+		ts := time.Unix(t.CreatedAt, 0).Format("01-02 15:04")
+		fmt.Fprintf(&b, "  %s  %s  (%d msgs)  %s\n", t.ID, t.Name, t.MessageCount, ts)
+	}
+	return b.String(), nil
+}
+
+func topicInfo(db *sql.DB, id string) (string, error) {
+	t, err := GetTopic(db, id)
+	if err != nil {
+		return "", err
+	}
+
+	topics, _ := ListTopics(db)
+	var msgCount int
+	for _, ts := range topics {
+		if ts.ID == id {
+			msgCount = ts.MessageCount
+			break
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "ID:       %s\n", t.ID)
+	fmt.Fprintf(&b, "Name:     %s\n", t.Name)
+	fmt.Fprintf(&b, "Messages: %d\n", msgCount)
+	fmt.Fprintf(&b, "Created:  %s\n", time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04:05"))
+	return b.String(), nil
+}

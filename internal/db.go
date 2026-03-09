@@ -96,6 +96,27 @@ func ListTopics(db *sql.DB) ([]TopicSummary, error) {
 	return topics, rows.Err()
 }
 
+func RenameTopic(db *sql.DB, id, name string) error {
+	res, err := db.Exec("UPDATE topics SET name = ? WHERE id = ?", name, id)
+	if err != nil {
+		return fmt.Errorf("rename topic: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("topic %s not found", id)
+	}
+	return nil
+}
+
+func GetTopic(db *sql.DB, id string) (*Topic, error) {
+	var t Topic
+	err := db.QueryRow("SELECT id, name, created_at FROM topics WHERE id = ?", id).Scan(&t.ID, &t.Name, &t.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("topic %s not found", id)
+	}
+	return &t, nil
+}
+
 // --- Messages ---
 
 func LoadMessages(db *sql.DB, topicID string) ([]Message, error) {
