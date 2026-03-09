@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
+	"math"
 )
 
 const embeddingModel = "openai/text-embedding-3-small"
@@ -46,7 +46,7 @@ func GetEmbedding(cfg *Config, text string) ([]float32, error) {
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("embedding request: %w", err)
 	}

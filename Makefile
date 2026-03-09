@@ -1,12 +1,17 @@
-.PHONY: build dev clean
+.PHONY: build build-local dev clean
 
+# Default: build for BoxLite VM (Linux arm64)
 build:
-	go build -o bin/agent ./cmd/agent
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/agent ./cmd/agent
 
-dev: build
+# Local development (macOS)
+build-local:
+	go build -o bin/agent-local ./cmd/agent
+
+dev: build-local
 	@mkdir -p data
 	@[ -f data/config.yaml ] || cp seed/config.yaml data/config.yaml
-	@echo "Ready. Usage: echo '{\"message\":\"hello\"}' | commands/send"
+	@echo "Ready. Usage: bin/agent-local send -p 'hello'"
 
 clean:
 	rm -rf bin/ data/
