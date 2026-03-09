@@ -30,6 +30,7 @@ func main() {
 	root.AddCommand(getRunCmd())
 	root.AddCommand(cancelRunCmd())
 	root.AddCommand(workerCmd())
+	root.AddCommand(memoryWorkerCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -167,7 +168,7 @@ func runSync(db *sql.DB, topicID, message string, out internal.Output) error {
 		return err
 	}
 
-	internal.ProcessMemory(db, cfg, topicID, run.ID, newMsgs)
+	spawnMemoryWorker(topicID, run.ID)
 	return nil
 }
 
@@ -396,4 +397,48 @@ func listTopicsCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func spawnMemoryWorker(topicID, runID string) {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(exe, "_process-memory", "--topic-id", topicID, "--run-id", runID)
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Start()
+}
+
+func memoryWorkerCmd() *cobra.Command {
+	var topicID, runID string
+
+	cmd := &cobra.Command{
+		Use:    "_process-memory",
+		Hidden: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := internal.LoadConfig()
+			if err != nil {
+				return err
+			}
+			db, err := internal.OpenDB()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			msgs, err := internal.LoadMessagesByRunID(db, runID)
+			if err != nil {
+				return err
+			}
+			internal.ProcessMemory(db, cfg, topicID, runID, msgs)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&topicID, "topic-id", "", "")
+	cmd.Flags().StringVar(&runID, "run-id", "", "")
+	return cmd
 }
