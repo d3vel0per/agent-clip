@@ -8,6 +8,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// clipBase returns the clip root directory (parent of bin/).
+func clipBase() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "."
+	}
+	return filepath.Dir(filepath.Dir(exe))
+}
+
 type Config struct {
 	Model        string `yaml:"model"`
 	LLMBaseURL   string `yaml:"llm_base_url"`
@@ -23,13 +32,7 @@ func (c *Config) GetAPIKey() string {
 }
 
 func LoadConfig() (*Config, error) {
-	// resolve data/config.yaml relative to the binary's parent dir
-	exe, err := os.Executable()
-	if err != nil {
-		return nil, fmt.Errorf("resolve executable: %w", err)
-	}
-	base := filepath.Dir(filepath.Dir(exe)) // bin/agent → repo root
-	path := filepath.Join(base, "data", "config.yaml")
+	path := filepath.Join(clipBase(), "data", "config.yaml")
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
