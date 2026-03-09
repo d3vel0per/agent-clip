@@ -397,11 +397,16 @@ func getTopicCmd() *cobra.Command {
 			}
 
 			// Convert to a web-friendly format
+			type webToolCall struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}
 			type webMsg struct {
-				Role       string `json:"role"`
-				Content    string `json:"content"`
-				ToolCallID string `json:"tool_call_id,omitempty"`
-				Reasoning  string `json:"reasoning,omitempty"`
+				Role       string        `json:"role"`
+				Content    string        `json:"content"`
+				ToolCallID string        `json:"tool_call_id,omitempty"`
+				Reasoning  string        `json:"reasoning,omitempty"`
+				ToolCalls  []webToolCall `json:"tool_calls,omitempty"`
 			}
 			result := make([]webMsg, 0, len(msgs))
 			for _, m := range msgs {
@@ -415,10 +420,53 @@ func getTopicCmd() *cobra.Command {
 				if m.Reasoning != nil {
 					wm.Reasoning = *m.Reasoning
 				}
+				// Add tool calls
+				for _, tc := range m.ToolCalls {
+					wm.ToolCalls = append(wm.ToolCalls, webToolCall{
+						Name:      tc.Function.Name,
+						Arguments: tc.Function.Arguments,
+					})
+				}
+				// Sanitize for display
+				if wm.Role == "user" {
+					wm.Content = internal.ExtractUserContent(wm.Content)
+				}
+				if wm.Role == "assistant" {
+					wm.Content, wm.Reasoning = internal.ExtractThinking(wm.Content, wm.Reasoning)
+				}
 				result = append(result, wm)
 			}
 
-			out.Result(result)
+			// Check for active run
+			type webRun struct {
+				ID        string `json:"id"`
+				Status    string `json:"status"`
+				StartedAt int64  `json:"started_at"`
+				Async     bool   `json:"async"`
+				Output    string `json:"output,omitempty"`
+			}
+			type topicResponse struct {
+				Messages  []webMsg `json:"messages"`
+				ActiveRun *webRun  `json:"active_run"`
+			}
+
+			resp := topicResponse{Messages: result}
+
+			activeRun, _ := internal.GetActiveRun(db, args[0])
+			if activeRun != nil {
+				wr := &webRun{
+					ID:        activeRun.ID,
+					Status:    activeRun.Status,
+					StartedAt: activeRun.StartedAt,
+					Async:     activeRun.Async,
+				}
+				if activeRun.Async {
+					wr.Output = internal.ReadOutput(activeRun.ID)
+				}
+				resp.ActiveRun = wr
+			}
+
+			out.Result(resp)
 			return nil
 		},
 	}
@@ -487,7 +535,29 @@ func listTopicsCmd() *cobra.Command {
 				return err
 			}
 
-			out.Result(topics)
+			// Check which topics have active runs
+			activeTopics := internal.GetActiveRunTopics(db)
+
+			type webTopic struct {
+				ID           string `json:"id"`
+				Name         string `json:"name"`
+				MessageCount int    `json:"message_count"`
+				CreatedAt    int64  `json:"created_at"`
+				HasActiveRun bool   `json:"has_active_run,omitempty"`
+			}
+			result := make([]webTopic, 0, len(topics))
+			for _, t := range topics {
+				wt := webTopic{
+					ID:           t.ID,
+					Name:         t.Name,
+					MessageCount: t.MessageCount,
+					CreatedAt:    t.CreatedAt,
+					HasActiveRun: activeTopics[t.ID],
+				}
+				result = append(result, wt)
+			}
+
+			out.Result(result)
 			return nil
 		},
 	}

@@ -5,6 +5,7 @@ export interface Topic {
   name: string;
   message_count: number;
   created_at: number;
+  has_active_run?: boolean;
 }
 
 export interface Run {
@@ -29,21 +30,20 @@ export interface HistoryMessage {
   content: string;
   tool_call_id?: string;
   reasoning?: string;
+  tool_calls?: { name: string; arguments: string }[];
 }
 
-/** A tool call within an assistant message */
-export interface ToolCallEntry {
-  name: string;
-  arguments: string;
-  result?: string;
-}
+// ─── Block-based message model (supports interleaved thinking/tool/text) ───
+
+export type MessageBlock =
+  | { type: "thinking"; content: string }
+  | { type: "tool_call"; name: string; arguments: string; result?: string; status: "running" | "done" | "error" }
+  | { type: "text"; content: string };
 
 /** A single chat message for rendering */
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
-  content: string;
-  thinking?: string;
-  toolCalls?: ToolCallEntry[];
+  blocks: MessageBlock[];
   status: "done" | "streaming" | "error";
 }

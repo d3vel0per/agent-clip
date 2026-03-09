@@ -54,9 +54,7 @@ func RunLoop(cfg *Config, ctx *ContextResult, registry *Registry, out Output, rc
 			return nil, err
 		}
 
-		if thinkingStarted {
-			out.Thinking("\n")
-		}
+		// No trailing \n for thinking — the UI handles block boundaries
 
 		// --- tool_calls ---
 		if len(resp.ToolCalls) > 0 {
@@ -142,8 +140,9 @@ func execToolCall(registry *Registry, tc ToolCall) string {
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	return s[:n] + "..."
+	return string(r[:n]) + "..."
 }

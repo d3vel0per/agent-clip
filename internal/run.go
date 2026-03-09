@@ -69,6 +69,27 @@ func GetActiveRun(db *sql.DB, topicID string) (*Run, error) {
 	return r, nil
 }
 
+// GetActiveRunTopics returns a set of topic IDs that have running runs with alive PIDs.
+func GetActiveRunTopics(db *sql.DB) map[string]bool {
+	result := make(map[string]bool)
+	rows, err := db.Query(`SELECT topic_id, pid FROM runs WHERE status = 'running'`)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var topicID string
+		var pid int
+		if err := rows.Scan(&topicID, &pid); err != nil {
+			continue
+		}
+		if IsProcessAlive(pid) {
+			result[topicID] = true
+		}
+	}
+	return result
+}
+
 func GetRun(db *sql.DB, runID string) (*Run, error) {
 	r, err := scanRun(db.QueryRow(`SELECT id, topic_id, status, pid, async, started_at, finished_at FROM runs WHERE id = ?`, runID))
 	if err == sql.ErrNoRows {

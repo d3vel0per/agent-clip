@@ -1,28 +1,92 @@
 /**
  * useChat — React hook encapsulating the full chat lifecycle.
  *
- * Handles: message accumulation, streaming state, topic management.
- * UI components just render what this hook returns.
+ * Block-based model: assistant messages contain an ordered sequence of
+ * MessageBlock (thinking / tool_call / text), supporting interleaved output.
  *
- * Usage:
- *   const chat = useChat()
- *   chat.send("hello")                    // new topic
- *   chat.send("follow up", topicId)       // continue topic
- *   chat.cancel()                         // cancel streaming
- *   chat.selectTopic(topicId)             // switch topic
- *   chat.messages                         // ChatMessage[] to render
- *   chat.isStreaming                      // show loading indicator
- *   chat.topics                           // Topic[] for sidebar
- *   chat.currentTopicId                   // active topic
+ * Per-topic message cache: switching topics preserves streaming state.
  */
 
 import { useState, useCallback, useRef } from "react";
 import * as agent from "./agent";
-import type { Topic, ChatMessage, ToolCallEntry } from "./types";
+import type { Topic, ChatMessage, MessageBlock, HistoryMessage } from "./types";
+
+// Collect tool results that follow an assistant message.
+function collectToolResults(history: HistoryMessage[], assistantIdx: number): string[] {
+  const results: string[] = [];
+  for (let i = assistantIdx + 1; i < history.length; i++) {
+    if (history[i].role === "tool") {
+      results.push(history[i].content ?? "");
+    } else {
+      break;
+    }
+  }
+  return results;
+}
 
 let msgCounter = 0;
 function nextId() {
   return `msg-${++msgCounter}`;
+}
+
+// Convert raw history messages to ChatMessage blocks
+function historyToChatMessages(history: HistoryMessage[]): ChatMessage[] {
+  const chatMsgs: ChatMessage[] = [];
+  let currentAssistant: ChatMessage | null = null;
+
+  const flushAssistant = () => {
+    if (currentAssistant && currentAssistant.blocks.length > 0) {
+      chatMsgs.push(currentAssistant);
+    }
+    currentAssistant = null;
+  };
+
+  for (const msg of history) {
+    if (msg.role === "user") {
+      flushAssistant();
+      chatMsgs.push({
+        id: nextId(),
+        role: "user",
+        blocks: [{ type: "text", content: msg.content ?? "" }],
+        status: "done",
+      });
+    } else if (msg.role === "assistant") {
+      if (!currentAssistant) {
+        currentAssistant = { id: nextId(), role: "assistant", blocks: [], status: "done" };
+      }
+      if (msg.reasoning) {
+        currentAssistant.blocks.push({ type: "thinking", content: msg.reasoning });
+      }
+      if (msg.tool_calls?.length) {
+        const msgIdx = history.indexOf(msg);
+        const results = collectToolResults(history, msgIdx);
+        for (let j = 0; j < msg.tool_calls.length; j++) {
+          const tc = msg.tool_calls[j];
+          currentAssistant.blocks.push({
+            type: "tool_call",
+            name: tc.name,
+            arguments: tc.arguments,
+            result: results[j],
+            status: "done",
+          });
+        }
+      }
+      if (msg.content) {
+        currentAssistant.blocks.push({ type: "text", content: msg.content });
+      }
+    }
+  }
+  flushAssistant();
+  return chatMsgs;
+}
+
+// Track streaming state per topic
+interface StreamState {
+  topicId: string;
+  userMsg: ChatMessage;
+  assistantId: string;
+  blocks: MessageBlock[];
+  cancel: () => void;
 }
 
 export function useChat() {
@@ -31,9 +95,12 @@ export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const cancelRef = useRef<(() => void) | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
 
-  // ─── Load topics ───
+  // Per-topic message cache (preserves streaming state across switches)
+  const messageCacheRef = useRef<Map<string, ChatMessage[]>>(new Map());
+  // Active stream state (survives topic switches)
+  const streamRef = useRef<StreamState | null>(null);
 
   const loadTopics = useCallback(async () => {
     try {
@@ -45,126 +112,207 @@ export function useChat() {
   }, []);
 
   // ─── Select topic + load history ───
-
   const selectTopic = useCallback(async (topicId: string | null) => {
+    // Save current messages to cache before switching
+    if (currentTopicId) {
+      messageCacheRef.current.set(currentTopicId, messages);
+    }
+
     setCurrentTopicId(topicId);
     setError(null);
+    setActiveRunId(null);
 
     if (!topicId) {
       setMessages([]);
+      setIsStreaming(false);
       return;
     }
 
+    // Check if we have an active stream for this topic
+    const stream = streamRef.current;
+    if (stream && stream.topicId === topicId) {
+      // Restore from cache (has the live streaming messages)
+      const cached = messageCacheRef.current.get(topicId);
+      if (cached) {
+        setMessages(cached);
+        setIsStreaming(true);
+        return;
+      }
+    }
+
+    // Load from backend
     try {
-      const history = await agent.getTopicMessages(topicId);
-      const chatMsgs: ChatMessage[] = [];
-      for (const msg of history) {
-        if (msg.role === "user" || msg.role === "assistant") {
+      const data = await agent.getTopicData(topicId);
+      const chatMsgs = historyToChatMessages(data.messages);
+
+      // If there's an active run, show indicator
+      if (data.active_run) {
+        setActiveRunId(data.active_run.id);
+
+        // For async runs with output, append as a streaming assistant message
+        if (data.active_run.async && data.active_run.output) {
           chatMsgs.push({
             id: nextId(),
-            role: msg.role,
-            content: msg.content ?? "",
-            thinking: msg.reasoning,
-            status: "done",
+            role: "assistant",
+            blocks: [{ type: "text", content: data.active_run.output }],
+            status: "streaming",
+          });
+        } else if (!data.active_run.async) {
+          // Sync run — stream is active in current session
+          // The stream callbacks will update messages via assistantId
+          // Just show what we have from DB
+          chatMsgs.push({
+            id: nextId(),
+            role: "assistant",
+            blocks: [],
+            status: "streaming",
           });
         }
       }
+
       setMessages(chatMsgs);
+      messageCacheRef.current.set(topicId, chatMsgs);
     } catch (e) {
       setMessages([]);
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTopicId, messages]);
 
   // ─── Send message ───
-
   const send = useCallback((message: string, topicId?: string) => {
     const targetTopicId = topicId ?? currentTopicId ?? undefined;
 
-    // Add user message immediately
     const userMsg: ChatMessage = {
       id: nextId(),
       role: "user",
-      content: message,
+      blocks: [{ type: "text", content: message }],
       status: "done",
     };
 
-    // Placeholder for assistant response
     const assistantMsg: ChatMessage = {
       id: nextId(),
       role: "assistant",
-      content: "",
-      thinking: "",
-      toolCalls: [],
+      blocks: [],
       status: "streaming",
     };
 
     const assistantId = assistantMsg.id;
+    const blocks: MessageBlock[] = [];
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setIsStreaming(true);
     setError(null);
 
-    // Mutable accumulator (updated via setMessages functional updates)
-    let text = "";
-    let thinking = "";
-    const toolCalls: ToolCallEntry[] = [];
+    const getLastBlock = (type: string) => {
+      const last = blocks[blocks.length - 1];
+      return last?.type === type ? last : null;
+    };
 
     const updateAssistant = (patch: Partial<ChatMessage>) => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)),
-      );
+      setMessages((prev) => {
+        const updated = prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m));
+        // Also update cache
+        if (targetTopicId) {
+          messageCacheRef.current.set(targetTopicId, updated);
+        }
+        return updated;
+      });
     };
 
     const cancel = agent.send(message, { topicId: targetTopicId }, {
       onInfo: (info) => {
-        // Parse topic ID from "[topic] abc123 (name)"
         const match = info.match(/\[topic\]\s+(\S+)/);
-        if (match && !targetTopicId) {
-          setCurrentTopicId(match[1]);
+        if (match) {
+          const newTopicId = match[1];
+          if (!targetTopicId) {
+            setCurrentTopicId(newTopicId);
+          }
+          // Update stream ref with actual topic ID
+          if (streamRef.current) {
+            streamRef.current.topicId = newTopicId;
+          }
         }
-      },
-      onText: (token) => {
-        text += token;
-        updateAssistant({ content: text });
       },
       onThinking: (token) => {
-        thinking += token;
-        updateAssistant({ thinking });
+        // Skip empty/whitespace-only thinking tokens (e.g. trailing "\n")
+        if (!token.trim() && !getLastBlock("thinking")) return;
+
+        const last = getLastBlock("thinking") as { type: "thinking"; content: string } | null;
+        if (last) {
+          last.content += token;
+        } else {
+          // Strip the "[thinking] " prefix from the first token
+          const clean = token.replace(/^\[thinking\]\s*/, "");
+          if (!clean) return;
+          blocks.push({ type: "thinking", content: clean });
+        }
+        updateAssistant({ blocks: [...blocks] });
       },
       onToolCall: (name, args) => {
-        toolCalls.push({ name, arguments: args });
-        updateAssistant({ toolCalls: [...toolCalls] });
+        blocks.push({ type: "tool_call", name, arguments: args, status: "running" });
+        updateAssistant({ blocks: [...blocks] });
       },
       onToolResult: (content) => {
-        if (toolCalls.length > 0) {
-          toolCalls[toolCalls.length - 1].result = content;
-          updateAssistant({ toolCalls: [...toolCalls] });
+        for (let i = blocks.length - 1; i >= 0; i--) {
+          const b = blocks[i];
+          if (b.type === "tool_call" && b.status === "running") {
+            b.result = content;
+            b.status = "done";
+            break;
+          }
         }
+        updateAssistant({ blocks: [...blocks] });
+      },
+      onText: (token) => {
+        const last = getLastBlock("text") as { type: "text"; content: string } | null;
+        if (last) {
+          last.content += token;
+        } else {
+          blocks.push({ type: "text", content: token });
+        }
+        updateAssistant({ blocks: [...blocks] });
       },
       onDone: () => {
         updateAssistant({ status: "done" });
         setIsStreaming(false);
-        cancelRef.current = null;
-        loadTopics(); // refresh topic list (new topic may have been created)
+        setActiveRunId(null);
+        streamRef.current = null;
+        // Clear cache so next load fetches fresh from DB
+        if (targetTopicId) {
+          messageCacheRef.current.delete(targetTopicId);
+        }
+        loadTopics();
       },
       onError: (err) => {
-        updateAssistant({ status: "error", content: text || err.message });
+        const textContent = blocks.find(b => b.type === "text") as { content: string } | undefined;
+        if (!textContent) {
+          blocks.push({ type: "text", content: err.message });
+        }
+        updateAssistant({ blocks: [...blocks], status: "error" });
         setIsStreaming(false);
+        setActiveRunId(null);
         setError(err.message);
-        cancelRef.current = null;
+        streamRef.current = null;
       },
     });
 
-    cancelRef.current = cancel;
+    // Track the stream
+    streamRef.current = {
+      topicId: targetTopicId ?? "",
+      userMsg,
+      assistantId,
+      blocks,
+      cancel,
+    };
   }, [currentTopicId, loadTopics]);
 
   // ─── Cancel streaming ───
-
   const cancel = useCallback(() => {
-    cancelRef.current?.();
-    cancelRef.current = null;
+    streamRef.current?.cancel();
+    streamRef.current = null;
     setIsStreaming(false);
+    setActiveRunId(null);
     setMessages((prev) =>
       prev.map((m) =>
         m.status === "streaming" ? { ...m, status: "done" as const } : m,
@@ -173,14 +321,12 @@ export function useChat() {
   }, []);
 
   return {
-    // State
     topics,
     currentTopicId,
     messages,
     isStreaming,
     error,
-
-    // Actions
+    activeRunId,
     loadTopics,
     selectTopic,
     send,

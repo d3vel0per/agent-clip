@@ -20,8 +20,19 @@ export async function createTopic(name: string): Promise<Topic> {
   });
 }
 
-export async function getTopicMessages(topicId: string): Promise<HistoryMessage[]> {
-  return invoke<HistoryMessage[]>("get-topic", { args: [topicId] });
+export interface TopicResponse {
+  messages: HistoryMessage[];
+  active_run: {
+    id: string;
+    status: string;
+    started_at: number;
+    async: boolean;
+    output?: string;
+  } | null;
+}
+
+export async function getTopicData(topicId: string): Promise<TopicResponse> {
+  return invoke<TopicResponse>("get-topic", { args: [topicId] });
 }
 
 // ─── Send (streaming) ───

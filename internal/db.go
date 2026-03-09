@@ -43,7 +43,48 @@ func OpenDB() (*sql.DB, error) {
 	db.Exec("ALTER TABLE summaries ADD COLUMN run_id TEXT")
 	db.Exec("ALTER TABLE summaries ADD COLUMN embedding_model TEXT")
 
+	// one-time data cleanup: move <think> from content to reasoning
+	migrateThinkTags(db)
+
 	return db, nil
+}
+
+func migrateThinkTags(db *sql.DB) {
+	rows, err := db.Query(`SELECT rowid, content, reasoning FROM messages WHERE role = 'assistant' AND content LIKE '%<think>%'`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	type fix struct {
+		rowid     int64
+		content   string
+		reasoning string
+	}
+	var fixes []fix
+	for rows.Next() {
+		var rowid int64
+		var contentPtr, reasoningPtr *string
+		if err := rows.Scan(&rowid, &contentPtr, &reasoningPtr); err != nil {
+			continue
+		}
+		content := ""
+		if contentPtr != nil {
+			content = *contentPtr
+		}
+		reasoning := ""
+		if reasoningPtr != nil {
+			reasoning = *reasoningPtr
+		}
+		cleanContent, cleanReasoning := ExtractThinking(content, reasoning)
+		if cleanContent != content {
+			fixes = append(fixes, fix{rowid, cleanContent, cleanReasoning})
+		}
+	}
+
+	for _, f := range fixes {
+		db.Exec("UPDATE messages SET content = ?, reasoning = ? WHERE rowid = ?", f.content, f.reasoning, f.rowid)
+	}
 }
 
 // --- Topics ---

@@ -73,6 +73,7 @@ type chatRequest struct {
 	Messages []Message `json:"messages"`
 	Tools    []ToolDef `json:"tools,omitempty"`
 	Stream   bool      `json:"stream"`
+	MaxTokens int     `json:"max_tokens,omitempty"`
 }
 
 type streamDelta struct {
@@ -98,8 +99,7 @@ type streamChunk struct {
 	} `json:"choices"`
 }
 
-// CallLLM sends a streaming request and returns text content and/or tool calls.
-// Text tokens are passed to onToken as they arrive.
+// CallLLM dispatches to the appropriate protocol based on provider config.
 func CallLLM(cfg *Config, messages []Message, tools []ToolDef, onToken func(string), onThinking func(string)) (*LLMResponse, error) {
 	provider, err := cfg.GetLLMProvider()
 	if err != nil {
@@ -109,11 +109,22 @@ func CallLLM(cfg *Config, messages []Message, tools []ToolDef, onToken func(stri
 		return nil, fmt.Errorf("no api_key for llm provider %q", cfg.LLMProvider)
 	}
 
+	switch provider.Protocol {
+	case "anthropic":
+		return callAnthropic(provider, cfg.LLMModel, messages, tools, onToken, onThinking)
+	default:
+		return callOpenAI(provider, cfg.LLMModel, messages, tools, onToken, onThinking)
+	}
+}
+
+// callOpenAI implements the OpenAI ChatCompletion streaming protocol.
+func callOpenAI(provider *ProviderConfig, model string, messages []Message, tools []ToolDef, onToken func(string), onThinking func(string)) (*LLMResponse, error) {
 	body, err := json.Marshal(chatRequest{
-		Model:    cfg.LLMModel,
-		Messages: messages,
-		Tools:    tools,
-		Stream:   true,
+		Model:     model,
+		Messages:  messages,
+		Tools:     tools,
+		Stream:    true,
+		MaxTokens: 16384,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
@@ -165,7 +176,6 @@ func CallLLM(cfg *Config, messages []Message, tools []ToolDef, onToken func(stri
 
 		delta := chunk.Choices[0].Delta
 
-		// accumulate reasoning/thinking content
 		if delta.ReasoningContent != "" {
 			reasoningBuf.WriteString(delta.ReasoningContent)
 			if onThinking != nil {
@@ -173,7 +183,6 @@ func CallLLM(cfg *Config, messages []Message, tools []ToolDef, onToken func(stri
 			}
 		}
 
-		// accumulate text content
 		if delta.Content != "" {
 			contentBuf.WriteString(delta.Content)
 			if onToken != nil {
@@ -181,7 +190,6 @@ func CallLLM(cfg *Config, messages []Message, tools []ToolDef, onToken func(stri
 			}
 		}
 
-		// accumulate tool calls
 		for _, stc := range delta.ToolCalls {
 			tc, ok := tcMap[stc.Index]
 			if !ok {

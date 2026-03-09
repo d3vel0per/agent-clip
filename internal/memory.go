@@ -278,8 +278,8 @@ func renderTrajectory(msgs []Message) string {
 
 func GenerateSummary(db *sql.DB, cfg *Config, newMsgs []Message) (string, error) {
 	trajectory := renderTrajectory(newMsgs)
-	if len(trajectory) > 6000 {
-		trajectory = trajectory[:6000] + "\n... (truncated)"
+	if r := []rune(trajectory); len(r) > 6000 {
+		trajectory = string(r[:6000]) + "\n... (truncated)"
 	}
 
 	var contextSection string

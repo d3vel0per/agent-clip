@@ -18,8 +18,9 @@ func clipBase() string {
 }
 
 type ProviderConfig struct {
-	BaseURL string `yaml:"base_url"`
-	APIKey  string `yaml:"api_key"`
+	Protocol string `yaml:"protocol"` // "openai" (default) | "anthropic"
+	BaseURL  string `yaml:"base_url"`
+	APIKey   string `yaml:"api_key"`
 }
 
 type ClipConfig struct {
