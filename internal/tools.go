@@ -316,19 +316,62 @@ func topicInfo(db *sql.DB, id string) (string, error) {
 		return "", err
 	}
 
-	topics, _ := ListTopics(db)
-	var msgCount int
-	for _, ts := range topics {
-		if ts.ID == id {
-			msgCount = ts.MessageCount
-			break
+	var b strings.Builder
+	fmt.Fprintf(&b, "Topic: %s (%s)\n", t.Name, t.ID)
+	fmt.Fprintf(&b, "Created: %s\n", time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04:05"))
+
+	// list runs with summaries and tool counts
+	runs, _ := getTopicRuns(db, id)
+	if len(runs) > 0 {
+		fmt.Fprintf(&b, "Runs: %d\n\n", len(runs))
+		for i, r := range runs {
+			ts := time.Unix(r.StartedAt, 0).Format("15:04:05")
+			duration := ""
+			if r.FinishedAt > 0 {
+				d := time.Duration(r.FinishedAt-r.StartedAt) * time.Second
+				duration = fmt.Sprintf(" (%s)", d)
+			}
+			fmt.Fprintf(&b, "  Run %d [%s]%s  status=%s  tools=%d\n", i+1, ts, duration, r.Status, r.ToolCount)
+			if r.Summary != "" {
+				fmt.Fprintf(&b, "    %s\n", r.Summary)
+			}
 		}
+	} else {
+		fmt.Fprintf(&b, "Runs: 0\n")
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "ID:       %s\n", t.ID)
-	fmt.Fprintf(&b, "Name:     %s\n", t.Name)
-	fmt.Fprintf(&b, "Messages: %d\n", msgCount)
-	fmt.Fprintf(&b, "Created:  %s\n", time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04:05"))
 	return b.String(), nil
+}
+
+type topicRunInfo struct {
+	ID         string
+	Status     string
+	StartedAt  int64
+	FinishedAt int64
+	ToolCount  int
+	Summary    string
+}
+
+func getTopicRuns(db *sql.DB, topicID string) ([]topicRunInfo, error) {
+	rows, err := db.Query(`
+		SELECT r.id, r.status, r.started_at, COALESCE(r.finished_at, 0),
+			(SELECT COUNT(*) FROM messages m WHERE m.run_id = r.id AND m.role = 'tool'),
+			COALESCE((SELECT s.summary FROM summaries s WHERE s.run_id = r.id LIMIT 1), '')
+		FROM runs r
+		WHERE r.topic_id = ?
+		ORDER BY r.started_at ASC`, topicID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var runs []topicRunInfo
+	for rows.Next() {
+		var r topicRunInfo
+		if err := rows.Scan(&r.ID, &r.Status, &r.StartedAt, &r.FinishedAt, &r.ToolCount, &r.Summary); err != nil {
+			return nil, err
+		}
+		runs = append(runs, r)
+	}
+	return runs, rows.Err()
 }
