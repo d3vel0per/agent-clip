@@ -75,13 +75,31 @@ type TopicSummary struct {
 	CreatedAt    int64  `json:"created_at"`
 }
 
+func CountTopics(db *sql.DB) (int, error) {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM topics`).Scan(&count)
+	return count, err
+}
+
 func ListTopics(db *sql.DB) ([]TopicSummary, error) {
-	rows, err := db.Query(`
+	return ListTopicsPage(db, 0, 0)
+}
+
+func ListTopicsPage(db *sql.DB, limit, offset int) ([]TopicSummary, error) {
+	query := `
 		SELECT t.id, t.name, t.created_at, COUNT(m.id) as msg_count
 		FROM topics t
 		LEFT JOIN messages m ON m.topic_id = t.id
 		GROUP BY t.id
-		ORDER BY t.created_at DESC`)
+		ORDER BY t.created_at DESC`
+
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		rows, err = db.Query(query+` LIMIT ? OFFSET ?`, limit, offset)
+	} else {
+		rows, err = db.Query(query)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list topics: %w", err)
 	}
@@ -122,11 +140,27 @@ func GetTopic(db *sql.DB, id string) (*Topic, error) {
 // --- Messages ---
 
 func LoadMessages(db *sql.DB, topicID string) ([]Message, error) {
-	rows, err := db.Query(`
-		SELECT role, content, tool_calls, tool_call_id, reasoning
-		FROM messages
-		WHERE topic_id = ?
-		ORDER BY id ASC`, topicID)
+	return LoadMessagesPage(db, topicID, 0)
+}
+
+// LoadMessagesPage loads messages for a topic. If limit > 0, returns the last N messages.
+func LoadMessagesPage(db *sql.DB, topicID string, limit int) ([]Message, error) {
+	var query string
+	var rows *sql.Rows
+	var err error
+
+	if limit > 0 {
+		// Get last N messages by wrapping in subquery to preserve ASC order
+		query = `SELECT role, content, tool_calls, tool_call_id, reasoning FROM (
+			SELECT role, content, tool_calls, tool_call_id, reasoning, id
+			FROM messages WHERE topic_id = ? ORDER BY id DESC LIMIT ?
+		) sub ORDER BY id ASC`
+		rows, err = db.Query(query, topicID, limit)
+	} else {
+		query = `SELECT role, content, tool_calls, tool_call_id, reasoning
+			FROM messages WHERE topic_id = ? ORDER BY id ASC`
+		rows, err = db.Query(query, topicID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("load messages: %w", err)
 	}

@@ -1,4 +1,4 @@
 name: agent
 description: "AI Agent — agentic loop with tools and memory"
 version: 0.1.0
-hasWeb: false
+hasWeb: true

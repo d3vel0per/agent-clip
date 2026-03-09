@@ -9,6 +9,48 @@ import (
 	"time"
 )
 
+// tokenize splits a command string by whitespace, respecting single and double quotes.
+// Quotes are stripped from the result: "hello world" → hello world.
+func tokenize(input string) []string {
+	var tokens []string
+	var current strings.Builder
+	inQuote := false
+	var quoteChar rune
+
+	for _, ch := range input {
+		if inQuote {
+			if ch == quoteChar {
+				inQuote = false
+			} else {
+				current.WriteRune(ch)
+			}
+			continue
+		}
+
+		if ch == '\'' || ch == '"' {
+			inQuote = true
+			quoteChar = ch
+			continue
+		}
+
+		if ch == ' ' || ch == '\t' {
+			if current.Len() > 0 {
+				tokens = append(tokens, current.String())
+				current.Reset()
+			}
+			continue
+		}
+
+		current.WriteRune(ch)
+	}
+
+	if current.Len() > 0 {
+		tokens = append(tokens, current.String())
+	}
+
+	return tokens
+}
+
 func RunToolDef(commands map[string]string) ToolDef {
 	var desc strings.Builder
 	desc.WriteString("Your ONLY tool. Execute commands via run(command=\"...\"). Supports chaining: cmd1 && cmd2, cmd1 | cmd2.\n\nAvailable commands:\n")
@@ -95,7 +137,7 @@ func (r *Registry) Exec(command, stdin string) string {
 }
 
 func (r *Registry) execSingle(command, stdin string) (string, bool) {
-	parts := strings.Fields(command)
+	parts := tokenize(command)
 	if len(parts) == 0 {
 		return "[error] empty command", true
 	}
@@ -373,10 +415,19 @@ func memoryFacts(db *sql.DB) (string, error) {
 		return "No facts stored.", nil
 	}
 
+	total := len(facts)
+	showing := facts
+	if len(showing) > 50 {
+		showing = showing[:50]
+	}
+
 	var b strings.Builder
-	fmt.Fprintf(&b, "Facts (%d total):\n", len(facts))
-	for _, f := range facts {
+	fmt.Fprintf(&b, "Facts (%d of %d):\n", len(showing), total)
+	for _, f := range showing {
 		fmt.Fprintf(&b, "  #%d [%s] %s\n", f.ID, f.Category, f.Content)
+	}
+	if total > len(showing) {
+		fmt.Fprintf(&b, "  ... %d more (use memory forget <id> to clean up)\n", total-len(showing))
 	}
 	return b.String(), nil
 }
@@ -458,17 +509,17 @@ func RegisterTopicCommands(r *Registry, db *sql.DB, cfg *Config) {
 }
 
 func topicList(db *sql.DB, limit int) (string, error) {
-	topics, err := ListTopics(db)
+	total, err := CountTopics(db)
 	if err != nil {
 		return "", err
 	}
-	if len(topics) == 0 {
+	if total == 0 {
 		return "No topics.", nil
 	}
 
-	total := len(topics)
-	if limit > 0 && limit < total {
-		topics = topics[:limit]
+	topics, err := ListTopicsPage(db, limit, 0)
+	if err != nil {
+		return "", err
 	}
 
 	var b strings.Builder
@@ -490,17 +541,12 @@ func topicInfo(db *sql.DB, id string) (string, error) {
 	fmt.Fprintf(&b, "Topic: %s (%s)\n", t.Name, t.ID)
 	fmt.Fprintf(&b, "Created: %s\n", time.Unix(t.CreatedAt, 0).Format("2006-01-02 15:04:05"))
 
-	// list runs with summaries and tool counts
-	runs, _ := getTopicRuns(db, id)
-	if len(runs) > 0 {
-		total := len(runs)
-		showRuns := runs
-		if len(showRuns) > 5 {
-			showRuns = showRuns[len(showRuns)-5:]
-		}
-		fmt.Fprintf(&b, "Runs: %d (showing last %d)\n\n", total, len(showRuns))
-		for i, r := range showRuns {
-			i = total - len(showRuns) + i
+	// list recent runs with summaries and tool counts
+	total, _ := countTopicRuns(db, id)
+	if total > 0 {
+		runs, _ := getTopicRunsPage(db, id, 5, 0)
+		fmt.Fprintf(&b, "Runs: %d (showing last %d)\n\n", total, len(runs))
+		for _, r := range runs {
 			ts := time.Unix(r.StartedAt, 0).Format("15:04:05")
 			duration := ""
 			if r.FinishedAt > 0 {
@@ -528,14 +574,32 @@ type topicRunInfo struct {
 	Summary    string
 }
 
+func countTopicRuns(db *sql.DB, topicID string) (int, error) {
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM runs WHERE topic_id = ?`, topicID).Scan(&count)
+	return count, err
+}
+
 func getTopicRuns(db *sql.DB, topicID string) ([]topicRunInfo, error) {
-	rows, err := db.Query(`
+	return getTopicRunsPage(db, topicID, 0, 0)
+}
+
+func getTopicRunsPage(db *sql.DB, topicID string, limit, offset int) ([]topicRunInfo, error) {
+	query := `
 		SELECT r.id, r.status, r.started_at, COALESCE(r.finished_at, 0),
 			(SELECT COUNT(*) FROM messages m WHERE m.run_id = r.id AND m.role = 'tool'),
 			COALESCE((SELECT s.summary FROM summaries s WHERE s.run_id = r.id LIMIT 1), '')
 		FROM runs r
 		WHERE r.topic_id = ?
-		ORDER BY r.started_at ASC`, topicID)
+		ORDER BY r.started_at DESC`
+
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		rows, err = db.Query(query+` LIMIT ? OFFSET ?`, topicID, limit, offset)
+	} else {
+		rows, err = db.Query(query, topicID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -553,24 +617,22 @@ func getTopicRuns(db *sql.DB, topicID string) ([]topicRunInfo, error) {
 }
 
 func topicRuns(db *sql.DB, topicID string, limit int) (string, error) {
-	runs, err := getTopicRuns(db, topicID)
+	total, err := countTopicRuns(db, topicID)
 	if err != nil {
 		return "", err
 	}
-	if len(runs) == 0 {
+	if total == 0 {
 		return "No runs in this topic.", nil
 	}
 
-	total := len(runs)
-	// show newest first: take last N runs, reverse
-	if limit > 0 && limit < total {
-		runs = runs[total-limit:]
+	runs, err := getTopicRunsPage(db, topicID, limit, 0)
+	if err != nil {
+		return "", err
 	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "Runs (%d of %d, newest first):\n", len(runs), total)
-	for i := len(runs) - 1; i >= 0; i-- {
-		r := runs[i]
+	for _, r := range runs {
 		ts := time.Unix(r.StartedAt, 0).Format("15:04:05")
 		duration := ""
 		if r.FinishedAt > 0 {

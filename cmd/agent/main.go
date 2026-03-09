@@ -28,6 +28,7 @@ func main() {
 	root.AddCommand(sendCmd())
 	root.AddCommand(createTopicCmd())
 	root.AddCommand(listTopicsCmd())
+	root.AddCommand(getTopicCmd())
 	root.AddCommand(getRunCmd())
 	root.AddCommand(cancelRunCmd())
 	root.AddCommand(configCmd())
@@ -375,6 +376,57 @@ func cancelRunCmd() *cobra.Command {
 	}
 }
 
+func getTopicCmd() *cobra.Command {
+	var limit int
+
+	cmd := &cobra.Command{
+		Use:   "get-topic <topic-id>",
+		Short: "Get topic messages",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			out := getOutput()
+			db, err := internal.OpenDB()
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			msgs, err := internal.LoadMessagesPage(db, args[0], limit)
+			if err != nil {
+				return err
+			}
+
+			// Convert to a web-friendly format
+			type webMsg struct {
+				Role       string `json:"role"`
+				Content    string `json:"content"`
+				ToolCallID string `json:"tool_call_id,omitempty"`
+				Reasoning  string `json:"reasoning,omitempty"`
+			}
+			result := make([]webMsg, 0, len(msgs))
+			for _, m := range msgs {
+				wm := webMsg{
+					Role:       m.Role,
+					ToolCallID: m.ToolCallID,
+				}
+				if m.Content != nil {
+					wm.Content = *m.Content
+				}
+				if m.Reasoning != nil {
+					wm.Reasoning = *m.Reasoning
+				}
+				result = append(result, wm)
+			}
+
+			out.Result(result)
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVarP(&limit, "limit", "l", 100, "Max messages to return (0 = all, default 100)")
+	return cmd
+}
+
 func createTopicCmd() *cobra.Command {
 	var name string
 
@@ -417,9 +469,11 @@ func createTopicCmd() *cobra.Command {
 }
 
 func listTopicsCmd() *cobra.Command {
-	return &cobra.Command{
+	var limit, offset int
+
+	cmd := &cobra.Command{
 		Use:   "list-topics",
-		Short: "List all conversation topics",
+		Short: "List conversation topics",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			out := getOutput()
 			db, err := internal.OpenDB()
@@ -428,7 +482,7 @@ func listTopicsCmd() *cobra.Command {
 			}
 			defer db.Close()
 
-			topics, err := internal.ListTopics(db)
+			topics, err := internal.ListTopicsPage(db, limit, offset)
 			if err != nil {
 				return err
 			}
@@ -437,6 +491,10 @@ func listTopicsCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().IntVarP(&limit, "limit", "l", 20, "Max topics to return")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Skip first N topics")
+	return cmd
 }
 
 func spawnMemoryWorker(topicID, runID string) {

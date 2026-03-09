@@ -1,52 +1,79 @@
 package internal
 
 import (
-	"bytes"
+	"context"
+	"crypto/tls"
 	"fmt"
-	"os/exec"
+	"net/http"
 	"strings"
+
+	connect "connectrpc.com/connect"
+	pinixv1 "github.com/epiral/pinix/gen/go/pinix/v1"
+	"github.com/epiral/pinix/gen/go/pinix/v1/pinixv1connect"
 )
 
-// InvokeClip calls a clip's command via `pinix invoke`, passing args directly.
+// InvokeClip calls a clip's command via Connect-RPC (ClipService.Invoke).
 func InvokeClip(clip *ClipConfig, command string, cmdArgs []string, stdin string) (string, error) {
-	// pinix invoke <command> --server <url> --token <token> -- [args...]
-	args := []string{"invoke", command,
-		"--server", clip.URL,
-		"--token", clip.Token,
-	}
-	if len(cmdArgs) > 0 {
-		args = append(args, "--")
-		args = append(args, cmdArgs...)
-	}
-
-	cmd := exec.Command("pinix", args...)
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
+	httpClient := &http.Client{
+		Transport: &bearerTransport{
+			token: clip.Token,
+			base: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		},
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	client := pinixv1connect.NewClipServiceClient(httpClient, clip.URL, connect.WithGRPC())
 
-	err := cmd.Run()
+	stream, err := client.Invoke(context.Background(), connect.NewRequest(&pinixv1.InvokeRequest{
+		Name:  command,
+		Args:  cmdArgs,
+		Stdin: stdin,
+	}))
+	if err != nil {
+		return "", fmt.Errorf("clip %s %s: %w", clip.Name, command, err)
+	}
+	defer stream.Close()
+
+	var stdout, stderr strings.Builder
+	var exitCode int32
+	for stream.Receive() {
+		chunk := stream.Msg()
+		switch p := chunk.Payload.(type) {
+		case *pinixv1.InvokeChunk_Stdout:
+			stdout.Write(p.Stdout)
+		case *pinixv1.InvokeChunk_Stderr:
+			stderr.Write(p.Stderr)
+		case *pinixv1.InvokeChunk_ExitCode:
+			exitCode = p.ExitCode
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return "", fmt.Errorf("clip %s %s stream: %w", clip.Name, command, err)
+	}
 
 	output := stdout.String()
-	if output == "" && err != nil {
-		// filter boxlite logs from stderr, surface real errors
-		for _, line := range strings.Split(stderr.String(), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" || strings.Contains(line, "boxlite") ||
-				strings.Contains(line, "INFO") || strings.Contains(line, "WARN") {
-				continue
-			}
-			output += line + "\n"
+	if output == "" && exitCode != 0 {
+		errMsg := stderr.String()
+		if errMsg != "" {
+			return "", fmt.Errorf("clip %s %s failed (exit %d): %s", clip.Name, command, exitCode, strings.TrimSpace(errMsg))
 		}
-		if output == "" {
-			return "", fmt.Errorf("clip %s %s failed: %v", clip.Name, command, err)
-		}
+		return "", fmt.Errorf("clip %s %s failed (exit %d)", clip.Name, command, exitCode)
 	}
 
 	return strings.TrimRight(output, "\n"), nil
+}
+
+// bearerTransport injects Authorization header into every HTTP request.
+type bearerTransport struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(req)
 }
 
 // RegisterClipCommands adds the "clip" command to the registry.
@@ -72,7 +99,7 @@ func RegisterClipCommands(r *Registry, cfg *Config) {
 		desc.WriteString("  clip sandbox bash ls -la\n")
 		desc.WriteString("  clip sandbox bash \"echo hello && pwd\"\n")
 		desc.WriteString("  clip sandbox read /tmp/file.txt\n")
-		desc.WriteString("  clip sandbox write /tmp/file.txt        (stdin = file content)\n")
+		desc.WriteString("  clip sandbox write /tmp/file.txt \"hello world\"\n")
 		desc.WriteString("  clip sandbox edit /tmp/f.txt old new\n")
 	}
 
@@ -92,7 +119,7 @@ func RegisterClipCommands(r *Registry, cfg *Config) {
 		}
 
 		command := args[1]
-		cmdArgs := args[2:] // remaining args passed directly to the clip command
+		cmdArgs := args[2:]
 		return InvokeClip(clip, command, cmdArgs, stdin)
 	})
 }

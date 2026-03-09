@@ -5,22 +5,40 @@ AI Agent as a [Pinix Clip](https://github.com/epiral/pinix) — agentic loop wit
 ## Quick Start
 
 ```bash
-# Build
-make build
-
-# Initialize data from seed
-make dev
+# Local development
+make dev                              # build macOS binary + init data/
+cd ui && pnpm install && cd ..        # install frontend deps (first time)
 
 # Add your API key to data/config.yaml
-# api_key: sk-or-v1-xxx
 
 # Chat
-commands/send -p "hello"
+bin/agent-local send -p "hello"
 
-# Multi-turn
-commands/send -p "remember my name is Alice" -t <topic-id>
-commands/send -p "what's my name?" -t <topic-id>
+# Build frontend
+make ui                               # ui/ → web/
 ```
+
+## Build & Deploy
+
+```bash
+# Development (workdir mode — Pinix reads repo directly)
+make deploy                           # cross-compile linux/arm64 + build frontend
+
+# Production (package for remote install)
+make package                          # → dist/agent.clip
+pinix clip install dist/agent.clip    # first time
+pinix clip upgrade dist/agent.clip    # update (preserves data/)
+```
+
+| Make target | What it does |
+|-------------|-------------|
+| `make build-local` | Go binary for macOS |
+| `make build` | Go binary for BoxLite VM (linux/arm64) |
+| `make ui` | Build frontend `ui/` → `web/` |
+| `make dev` | `build-local` + init `data/` from `seed/` |
+| `make deploy` | `build` + `ui` (workdir mode, changes are live) |
+| `make package` | ZIP → `dist/agent.clip` for `pinix clip install/upgrade` |
+| `make clean` | Remove `bin/` `data/` `web/` `dist/` |
 
 ## Architecture
 
@@ -28,15 +46,16 @@ commands/send -p "what's my name?" -t <topic-id>
 Agent Clip (this repo)
   │
   ├─ commands/          External interface (Pinix ClipService.Invoke)
-  │   send, create-topic, list-topics, get-run, cancel-run
+  │   send, create-topic, list-topics, get-run, cancel-run, config
   │
   ├─ run(cmd, stdin?)   Single LLM function call
-  │   ├─ Internal:  memory, topic, time, help, echo, grep, head, tail, wc
+  │   ├─ Internal:  memory, topic, config, time, help, echo, grep, head, tail, wc
   │   ├─ Chaining:  cmd1 | cmd2 && cmd3 ; cmd4
-  │   └─ Clips:     clip <name> <command> [args...]
+  │   ├─ Clips:     clip <name> <command> [args...]
+  │   └─ Browser:   browser <action> [params...]
   │
   ├─ Topics             Named conversation namespaces (SQLite)
-  ├─ Runs               One agentic loop per send (runtime concept)
+  ├─ Runs               One agentic loop per send (sync / async)
   ├─ Memory             Summaries + embeddings + facts + semantic search
   └─ Output             CLI (raw) / Web (jsonl) dual interface
 ```
@@ -55,7 +74,7 @@ A single agentic loop cycle — from user message to LLM's `finish_reason: "stop
 
 Three layers:
 - **Facts** — persistent knowledge (`memory store/facts/forget`)
-- **Summaries** — LLM-generated per-Run summary + OpenRouter embedding
+- **Summaries** — LLM-generated per-Run summary + embedding
 - **Semantic search** — cosine similarity over summary embeddings
 
 ### Clip
@@ -73,6 +92,7 @@ External capabilities invoked via `run("clip <name> <command> [args...]")`. Each
 | `list-topics` | | List all topics |
 | `get-run` | `<run-id>` | Show run status and output |
 | `cancel-run` | `<run-id>` | Cancel an active run |
+| `config` | `[set <key> <value>]` | View or update config |
 
 ### Internal (LLM tools via `run`)
 
@@ -91,19 +111,10 @@ External capabilities invoked via `run("clip <name> <command> [args...]")`. Each
 | `topic rename <id> <name>` | Rename a topic |
 | `clip list` | List connected clips |
 | `clip <name> <command> [args]` | Invoke a clip |
+| `browser <action> [params]` | Control remote browser |
+| `config [set <key> <value>]` | View/update agent config |
 | `echo`, `time`, `help` | Utilities |
-| `grep [-i] [-v] [-c] <pattern>` | Filter lines |
-| `head [n]`, `tail [n]` | First/last N lines |
-| `wc [-l\|-w\|-c]` | Count lines/words/chars |
-
-### Command Chaining
-
-```bash
-clip sandbox bash ls /etc | grep conf | head 5    # pipe
-topic list | grep Go                                # filter
-echo hello && echo world                            # sequential
-memory recent ; topic list                          # independent
-```
+| `grep`, `head`, `tail`, `wc` | Text processing (pipe-friendly) |
 
 ## Async Runs
 
@@ -122,70 +133,25 @@ commands/send -p "also check X" -r a1b2c3
 commands/cancel-run a1b2c3
 ```
 
-Defense: `send -t <topic>` errors if topic has an active run — must explicitly inject via `-r`.
-
-## Context Management
-
-### Run Window (3→7)
-
-- ≤7 completed Runs in topic: all loaded as full messages
-- \>7 Runs: last 3 full, older as summaries in topic history
-- ~80% prompt cache hit rate (prefix stable between compressions)
-
-### Message Structure
-
-```
-[system: base prompt + facts]          ← stable, cacheable
-[user: topic history summaries]        ← changes at compression boundary
-[assistant: "了解"]                    ← stable
-[recent Run messages...]               ← prefix grows, stable
-[user: <user>msg</user>               ← new, at end
-       <recall>semantic search</recall>
-       <environment>time, clips</environment>]
-```
-
-### XML User Message
-
-```xml
-<user>
-actual user message
-</user>
-
-<recall>
-- [03-09 15:04] (72%) topic="Go讨论" run=a1b2 — relevant past conversation...
-</recall>
-
-<environment>
-<time>2026-03-09 15:30:00 CST</time>
-<clips>
-  <clip name="sandbox" commands="bash, read, write, edit" />
-</clips>
-</environment>
-```
-
-## Output Formats
-
-```bash
-# CLI (default) — human-readable
-commands/send -p "hello"
-
-# JSONL — for web/programmatic consumption
-commands/send -p "hello" --output jsonl
-# → {"type":"info","message":"[topic] abc (hello)"}
-# → {"type":"text","content":"Hi"}
-# → {"type":"tool_call","name":"run","arguments":"..."}
-# → {"type":"tool_result","content":"..."}
-# → {"type":"done"}
-```
-
 ## Configuration
 
-`data/config.yaml` (initialized from `seed/config.yaml`):
+`data/config.yaml` — multi-provider, managed via `config` command:
 
 ```yaml
-model: anthropic/claude-3.5-haiku
-llm_base_url: https://openrouter.ai/api/v1
-api_key: <your-key>          # or set OPENROUTER_API_KEY env var
+name: pi
+providers:
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    api_key: <key>
+  bailian:
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: <key>
+
+llm_provider: openrouter
+llm_model: anthropic/claude-3.5-haiku
+embedding_provider: openrouter
+embedding_model: openai/text-embedding-3-small
+
 system_prompt: |
   你是 pi，一个智能助手。
 
@@ -194,46 +160,73 @@ clips:
     url: http://localhost:9875
     token: <clip-token>
     commands: [bash, read, write, edit]
+
+browser:
+  endpoint: http://localhost:19824
 ```
-
-## Database
-
-SQLite with WAL mode. Schema in `seed/schema.sql`.
-
-| Table | Purpose |
-|-------|---------|
-| `topics` | Conversation namespaces |
-| `messages` | Flat message stream (tagged with run_id) |
-| `runs` | Run lifecycle tracking |
-| `run_inbox` | Atomic inject messages (SQLite transactions) |
-| `summaries` | Per-Run summaries + embedding BLOBs |
-| `summaries_fts` | FTS5 keyword search index |
-| `facts` | Persistent user knowledge |
 
 ## Directory Structure
 
 ```
 agent-clip/
 ├── clip.yaml              # Pinix Clip metadata
-├── Makefile               # build / dev / clean
+├── Makefile               # build / build-local / dev / clean
+│
 ├── commands/              # External interface (shell wrappers → bin/agent)
+│   ├── send
+│   ├── create-topic
+│   ├── list-topics
+│   ├── get-run
+│   ├── cancel-run
+│   └── config
+│
 ├── seed/                  # Template for data/ (schema + default config)
+│   ├── schema.sql
+│   └── config.yaml
+│
 ├── cmd/agent/main.go      # CLI entry point (cobra)
-├── internal/
-│   ├── chain.go           # Command chaining parser (&&, ;, |)
-│   ├── clip.go            # Clip invocation via pinix CLI
-│   ├── config.go          # Config loading (data/config.yaml)
-│   ├── context.go         # Context building (Run Window, XML wrapping)
-│   ├── db.go              # SQLite operations (topics, messages)
-│   ├── embed.go           # OpenRouter embedding API + cosine similarity
-│   ├── llm.go             # LLM API call with tool support + streaming
+├── internal/              # Go packages
+│   ├── browser.go         # bb-browser HTTP client
+│   ├── chain.go           # Command chaining (&&, ;, |)
+│   ├── clip.go            # Clip-to-Clip invocation
+│   ├── config.go          # Multi-provider config + CLI
+│   ├── context.go         # Context building (Run Window, XML)
+│   ├── db.go              # SQLite operations
+│   ├── embed.go           # Embedding API + cosine similarity
+│   ├── llm.go             # LLM streaming + tool calls + thinking
 │   ├── loop.go            # Agentic loop engine
-│   ├── memory.go          # Summary generation, search, facts
-│   ├── output.go          # CLI/JSONL dual output interface
-│   ├── run.go             # Run lifecycle (create, finish, inject, inbox)
+│   ├── memory.go          # Summary, search, facts
+│   ├── output.go          # CLI / JSONL dual output
+│   ├── run.go             # Run lifecycle + atomic inject
 │   └── tools.go           # Command registry + builtins
-├── bin/agent              # Compiled binary (gitignored)
+│
+├── ui/                    # Frontend source (Vite + React + Tailwind v4 + shadcn/ui)
+│   ├── src/
+│   ├── vite.config.ts     # builds to ../web/
+│   └── package.json
+│
+├── web/                   # Build output (Pinix ReadFile serves this, gitignored)
+│
+├── docs/                  # Design docs
+│   ├── architecture.md
+│   ├── context.md
+│   ├── memory.md
+│   ├── runs.md
+│   ├── commands.md
+│   └── clips.md
+│
+├── bin/                   # Compiled Go binary (gitignored)
 └── data/                  # Runtime data (gitignored)
-    ├── agent.db           # SQLite database
-    └── config.yaml        # User config (from seed/)
+    ├── agent.db
+    └── config.yaml
 ```
+
+### Three-layer model
+
+| Layer | What | Mutable |
+|-------|------|---------|
+| **Workspace** (this repo) | Source code, build tools | dev time |
+| **Package** (`.clip` ZIP) | `clip.yaml` + `commands/` + `bin/` + `seed/` + `web/` | immutable |
+| **Instance** (on Pinix Server) | Package extracted + `data/` from `seed/` | `data/` only |
+
+`seed/` initializes `data/` on install; `clip upgrade` replaces everything except `data/`.
