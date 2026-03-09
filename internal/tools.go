@@ -392,7 +392,7 @@ func RegisterTopicCommands(r *Registry, db *sql.DB) {
   topic list [limit]               — list topics (default: 10, newest first)
   topic info <id>                  — show topic details and run history
   topic runs <id> [limit]          — list runs (default: 10, newest first)
-  topic run <id> <N>               — show run N's full messages
+  topic run <run-id>               — show a run's full messages
   topic rename <id> <new-name>     — rename a topic`,
 		func(args []string, stdin string) (string, error) {
 			if len(args) == 0 {
@@ -438,14 +438,10 @@ func RegisterTopicCommands(r *Registry, db *sql.DB) {
 				return topicRuns(db, args[1], limit)
 
 			case "run":
-				if len(args) < 3 {
-					return "", fmt.Errorf("usage: topic run <topic-id> <run-number>")
+				if len(args) < 2 {
+					return "", fmt.Errorf("usage: topic run <run-id>")
 				}
-				n, err := strconv.Atoi(args[2])
-				if err != nil {
-					return "", fmt.Errorf("run number must be an integer")
-				}
-				return topicRunDetail(db, args[1], n)
+				return topicRunDetail(db, args[1])
 
 			default:
 				return "", fmt.Errorf("unknown: topic %s. Use: list|info|runs|run|rename", args[0])
@@ -503,7 +499,7 @@ func topicInfo(db *sql.DB, id string) (string, error) {
 				d := time.Duration(r.FinishedAt-r.StartedAt) * time.Second
 				duration = fmt.Sprintf(" (%s)", d)
 			}
-			fmt.Fprintf(&b, "  Run %d [%s]%s  status=%s  tools=%d\n", i+1, ts, duration, r.Status, r.ToolCount)
+			fmt.Fprintf(&b, "  %s [%s]%s  status=%s  tools=%d\n", r.ID, ts, duration, r.Status, r.ToolCount)
 			if r.Summary != "" {
 				fmt.Fprintf(&b, "    %s\n", r.Summary)
 			}
@@ -567,14 +563,13 @@ func topicRuns(db *sql.DB, topicID string, limit int) (string, error) {
 	fmt.Fprintf(&b, "Runs (%d of %d, newest first):\n", len(runs), total)
 	for i := len(runs) - 1; i >= 0; i-- {
 		r := runs[i]
-		runNum := total - (len(runs) - 1 - i)
 		ts := time.Unix(r.StartedAt, 0).Format("15:04:05")
 		duration := ""
 		if r.FinishedAt > 0 {
 			d := time.Duration(r.FinishedAt-r.StartedAt) * time.Second
 			duration = fmt.Sprintf(" (%s)", d)
 		}
-		fmt.Fprintf(&b, "  #%d [%s]%s  status=%s  tools=%d\n", runNum, ts, duration, r.Status, r.ToolCount)
+		fmt.Fprintf(&b, "  %s [%s]%s  status=%s  tools=%d\n", r.ID, ts, duration, r.Status, r.ToolCount)
 		if r.Summary != "" {
 			fmt.Fprintf(&b, "     %s\n", r.Summary)
 		}
@@ -582,24 +577,20 @@ func topicRuns(db *sql.DB, topicID string, limit int) (string, error) {
 	return b.String(), nil
 }
 
-func topicRunDetail(db *sql.DB, topicID string, runNumber int) (string, error) {
-	runs, err := getTopicRuns(db, topicID)
+func topicRunDetail(db *sql.DB, runID string) (string, error) {
+	run, err := getRunInfo(db, runID)
 	if err != nil {
 		return "", err
 	}
-	if runNumber < 1 || runNumber > len(runs) {
-		return "", fmt.Errorf("run #%d not found (topic has %d runs)", runNumber, len(runs))
-	}
 
-	run := runs[runNumber-1]
-	msgs, err := LoadMessagesByRunID(db, run.ID)
+	msgs, err := LoadMessagesByRunID(db, runID)
 	if err != nil {
 		return "", err
 	}
 
 	var b strings.Builder
 	ts := time.Unix(run.StartedAt, 0).Format("2006-01-02 15:04:05")
-	fmt.Fprintf(&b, "Run #%d  [%s]  status=%s  tools=%d\n", runNumber, ts, run.Status, run.ToolCount)
+	fmt.Fprintf(&b, "Run %s  [%s]  status=%s  tools=%d\n", run.ID, ts, run.Status, run.ToolCount)
 	if run.Summary != "" {
 		fmt.Fprintf(&b, "Summary: %s\n", run.Summary)
 	}
@@ -639,4 +630,18 @@ func topicRunDetail(db *sql.DB, topicID string, runNumber int) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+func getRunInfo(db *sql.DB, runID string) (*topicRunInfo, error) {
+	var r topicRunInfo
+	err := db.QueryRow(`
+		SELECT r.id, r.status, r.started_at, COALESCE(r.finished_at, 0),
+			(SELECT COUNT(*) FROM messages m WHERE m.run_id = r.id AND m.role = 'tool'),
+			COALESCE((SELECT s.summary FROM summaries s WHERE s.run_id = r.id LIMIT 1), '')
+		FROM runs r
+		WHERE r.id = ?`, runID).Scan(&r.ID, &r.Status, &r.StartedAt, &r.FinishedAt, &r.ToolCount, &r.Summary)
+	if err != nil {
+		return nil, fmt.Errorf("run %s not found", runID)
+	}
+	return &r, nil
 }
