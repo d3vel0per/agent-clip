@@ -316,11 +316,9 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
                     <code className="block bg-bg-base rounded px-2 py-1 font-mono text-[10px] select-all">npm install -g bb-browser</code>
 
                     <p>{t("browser_step2")}</p>
-                    <p className="text-[10px]">{t("browser_ext_detail")}</p>
-                    <code className="block bg-bg-base rounded px-2 py-1 font-mono text-[10px] select-all break-all">node_modules/bb-browser/extension/</code>
-                    <p className="text-[10px] text-text-mute/60">
-                      GitHub: <span className="font-mono select-all">github.com/nicknisi/bb-browser</span>
-                    </p>
+                    <p className="text-[10px]">{t("browser_ext_download")}</p>
+                    <code className="block bg-bg-base rounded px-2 py-1 font-mono text-[10px] select-all break-all">github.com/yan5xu/bb-browser/releases</code>
+                    <p className="text-[10px] mt-1">{t("browser_ext_detail")}</p>
 
                     <p>{t("browser_step3")}</p>
                     <code className="block bg-bg-base rounded px-2 py-1 font-mono text-[10px] select-all">bb-browser daemon</code>
