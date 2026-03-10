@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 import { getConfig, setConfig, deleteConfig, addClip, removeClip, type AgentConfig } from "../lib/agent";
 import { useI18n } from "../lib/i18n";
 import { ScrollArea } from "./ui/scroll-area";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Circle, Search } from "lucide-react";
 
 interface SettingsPanelProps {
   open: boolean;
@@ -28,6 +28,9 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
   const [newClipName, setNewClipName] = useState("");
   const [newClipUrl, setNewClipUrl] = useState("");
   const [newClipToken, setNewClipToken] = useState("");
+
+  // Browser auto-detect
+  const [browserDetecting, setBrowserDetecting] = useState(false);
   const [newClipCommands, setNewClipCommands] = useState("");
 
   const loadConfig = async () => {
@@ -108,6 +111,26 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
       await loadConfig();
     } catch (err: any) {
       setError(err.message);
+    }
+  };
+
+  const handleBrowserDetect = async () => {
+    setBrowserDetecting(true);
+    try {
+      // Probe common bb-browser daemon ports
+      for (const port of [19824, 19825]) {
+        try {
+          const resp = await fetch(`http://localhost:${port}/`, { method: "GET", signal: AbortSignal.timeout(2000) });
+          if (resp.ok || resp.status === 404) {
+            await setConfig("browser.endpoint", `http://localhost:${port}`);
+            await loadConfig();
+            return;
+          }
+        } catch { /* try next */ }
+      }
+      setError(t("Browser daemon not detected. Make sure bb-browser daemon is running."));
+    } finally {
+      setBrowserDetecting(false);
     }
   };
 
@@ -232,17 +255,101 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
               ))}
             </Section>
 
-            {/* Browser */}
-            <Section title={t("Browser Endpoint")}>
-              <SettingInput
-                value={config.browser?.endpoint || ""}
-                onSave={(v) => handleSet("browser.endpoint", v)}
-                placeholder="http://host:port"
-                mono
-              />
+            {/* Capabilities */}
+            <Section title={t("CAPABILITIES")}>
+              {/* Sandbox */}
+              <CapabilityCard
+                name={t("Sandbox")}
+                desc={t("sandbox_desc")}
+                commands="bash, read, write, edit"
+                configured={config.clips.some(c => c.commands?.includes("bash"))}
+                t={t}
+              >
+                {config.clips.some(c => c.commands?.includes("bash")) ? (
+                  <div className="space-y-1">
+                    {config.clips.filter(c => c.commands?.includes("bash")).map(clip => (
+                      <div key={clip.name} className="flex items-center justify-between text-[11px]">
+                        <span className="font-mono text-text-mute truncate">{clip.name} — {clip.url}</span>
+                        <button onClick={() => handleRemoveClip(clip.name)} className="text-text-mute hover:text-destructive ml-2 shrink-0"><Trash2 className="h-3 w-3" /></button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-2 text-[11px] text-text-mute">
+                    <p>{t("sandbox_step1")}</p>
+                    <code className="block bg-bg-base rounded px-2 py-1 font-mono text-[10px] select-all">pinix clip install sandbox.clip</code>
+                    <p>{t("sandbox_step2")}</p>
+                    <div className="space-y-1.5 pt-1">
+                      <Input placeholder="http://host:9875" value={newClipUrl} onChange={e => setNewClipUrl(e.target.value)} className="h-8 text-[11px] font-mono" />
+                      <Input placeholder="clip token" type="password" value={newClipToken} onChange={e => setNewClipToken(e.target.value)} className="h-8 text-[11px] font-mono" />
+                      <Button size="sm" onClick={async () => {
+                        if (!newClipUrl.trim() || !newClipToken.trim()) return;
+                        try {
+                          await addClip({ name: "sandbox", url: newClipUrl.trim(), token: newClipToken.trim(), commands: ["bash", "read", "write", "edit"] });
+                          setNewClipUrl(""); setNewClipToken("");
+                          await loadConfig();
+                        } catch (err: any) { setError(err.message); }
+                      }} disabled={!newClipUrl.trim() || !newClipToken.trim()} className="w-full h-7 text-[11px]">{t("Connect")}</Button>
+                    </div>
+                  </div>
+                )}
+              </CapabilityCard>
+
+              {/* Browser */}
+              <CapabilityCard
+                name={t("Browser")}
+                desc={t("browser_desc")}
+                commands="snapshot, click, fill, eval"
+                configured={!!config.browser?.endpoint}
+                t={t}
+              >
+                {config.browser?.endpoint ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-[11px] text-text-mute">{config.browser.endpoint}</span>
+                      <button onClick={() => { handleSet("browser.endpoint", ""); }} className="text-text-mute hover:text-destructive"><Trash2 className="h-3 w-3" /></button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 text-[11px] text-text-mute">
+                    <p>{t("browser_step1")}</p>
+                    <code className="block bg-bg-base rounded px-2 py-1 font-mono text-[10px] select-all">npm install -g bb-browser</code>
+
+                    <p>{t("browser_step2")}</p>
+                    <p className="text-[10px]">{t("browser_ext_detail")}</p>
+                    <code className="block bg-bg-base rounded px-2 py-1 font-mono text-[10px] select-all break-all">node_modules/bb-browser/extension/</code>
+                    <p className="text-[10px] text-text-mute/60">
+                      GitHub: <span className="font-mono select-all">github.com/nicknisi/bb-browser</span>
+                    </p>
+
+                    <p>{t("browser_step3")}</p>
+                    <code className="block bg-bg-base rounded px-2 py-1 font-mono text-[10px] select-all">bb-browser daemon</code>
+
+                    <p>{t("browser_step4")}</p>
+                    <div className="flex gap-1.5 pt-1">
+                      <SettingInput
+                        value=""
+                        onSave={(v) => handleSet("browser.endpoint", v)}
+                        placeholder="http://localhost:19824"
+                        mono small
+                      />
+                      <Button size="sm" variant="outline" onClick={handleBrowserDetect} disabled={browserDetecting} className="h-7 text-[10px] shrink-0 px-2">
+                        <Search className="h-3 w-3 mr-1" />
+                        {browserDetecting ? t("Detecting...") : t("Auto-detect")}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CapabilityCard>
+
+              {/* Built-in */}
+              <div className="flex gap-4 text-[11px] text-text-mute pt-1">
+                <span className="flex items-center gap-1.5"><Circle className="h-2 w-2 fill-green-500 text-green-500" />{t("Memory")} — {t("built-in")}</span>
+                <span className="flex items-center gap-1.5"><Circle className="h-2 w-2 fill-green-500 text-green-500" />{t("Events")} — {t("built-in")}</span>
+              </div>
             </Section>
 
-            {/* Clips */}
+            {/* Extra Clips */}
             <Section title={t("Clips")} action={
               <button onClick={() => setShowAddClip(!showAddClip)} className="text-brand-primary hover:text-brand-primary/80 transition-colors">
                 <Plus className="h-3.5 w-3.5" />
@@ -258,11 +365,11 @@ export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
                 </div>
               )}
 
-              {config.clips.length === 0 && !showAddClip && (
-                <p className="text-xs text-text-mute">No clips configured</p>
+              {config.clips.filter(c => !c.commands?.includes("bash")).length === 0 && !showAddClip && (
+                <p className="text-xs text-text-mute">No extra clips</p>
               )}
 
-              {config.clips.map(clip => (
+              {config.clips.filter(c => !c.commands?.includes("bash")).map(clip => (
                 <div key={clip.name} className="p-3 rounded-lg bg-bg-surface border border-border mb-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-text-main">{clip.name}</span>
@@ -303,6 +410,28 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
     <div className="flex items-center gap-2">
       <span className="text-[10px] text-text-mute w-12 shrink-0">{label}</span>
       <div className="flex-1">{children}</div>
+    </div>
+  );
+}
+
+function CapabilityCard({ name, desc, commands, configured, t, children }: {
+  name: string; desc: string; commands: string; configured: boolean;
+  t: (key: string) => string; children: React.ReactNode;
+}) {
+  return (
+    <div className="p-3 rounded-lg bg-bg-surface border border-border mb-2">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <Circle className={`h-2.5 w-2.5 ${configured ? "fill-green-500 text-green-500" : "fill-red-400 text-red-400"}`} />
+          <span className="text-xs font-semibold text-text-main">{name}</span>
+        </div>
+        <span className={`text-[10px] ${configured ? "text-green-600" : "text-text-mute"}`}>
+          {configured ? t("Configured") : t("Not configured")}
+        </span>
+      </div>
+      <p className="text-[10px] text-text-mute mb-1">{desc}</p>
+      <p className="text-[10px] text-text-mute/60 font-mono mb-2">{commands}</p>
+      {children}
     </div>
   );
 }
