@@ -118,9 +118,16 @@ func (r *Registry) Exec(command, stdin string) string {
 	pipeInput := stdin
 
 	for i, seg := range segments {
-		// && semantics: skip if previous failed (but don't break — ; may follow)
-		if i > 0 && segments[i-1].Op == OpAnd && lastErr {
-			continue
+		if i > 0 {
+			prevOp := segments[i-1].Op
+			// && semantics: skip if previous failed
+			if prevOp == OpAnd && lastErr {
+				continue
+			}
+			// || semantics: skip if previous succeeded
+			if prevOp == OpOr && !lastErr {
+				continue
+			}
 		}
 
 		// determine stdin for this segment

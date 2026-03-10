@@ -10,6 +10,7 @@ type Operator int
 const (
 	OpNone Operator = iota
 	OpAnd           // &&
+	OpOr            // ||
 	OpSeq           // ;
 	OpPipe          // |
 )
@@ -67,8 +68,19 @@ func ParseChain(input string) []Segment {
 			continue
 		}
 
-		// | (but not ||)
-		if ch == '|' && (i+1 >= n || runes[i+1] != '|') {
+		// ||
+		if ch == '|' && i+1 < n && runes[i+1] == '|' {
+			segments = append(segments, Segment{
+				Raw: strings.TrimSpace(current.String()),
+				Op:  OpOr,
+			})
+			current.Reset()
+			i++ // skip second |
+			continue
+		}
+
+		// | (single pipe)
+		if ch == '|' {
 			segments = append(segments, Segment{
 				Raw: strings.TrimSpace(current.String()),
 				Op:  OpPipe,
