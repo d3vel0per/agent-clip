@@ -2,6 +2,8 @@
 
 AI Agent as a [Pinix Clip](https://github.com/epiral/pinix) — agentic loop with memory, tool use, vision, and async execution.
 
+[English](README.md) | [中文](README.zh-CN.md)
+
 ## Quick Start
 
 ```bash

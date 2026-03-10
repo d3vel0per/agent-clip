@@ -1,7 +1,7 @@
 .PHONY: build build-local ui dev deploy package clean
 
-SERVER := http://localhost:9875
-TOKEN  := $(PINIX_SUPER_TOKEN)
+SERVER ?= http://localhost:9875
+TOKEN  ?= $(PINIX_SUPER_TOKEN)
 
 # Build for BoxLite VM (Linux arm64)
 build:
