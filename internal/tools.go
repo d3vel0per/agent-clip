@@ -688,20 +688,20 @@ func topicRunDetail(db *sql.DB, runID string) (string, error) {
 		switch m.Role {
 		case "user":
 			if m.Content != nil {
-				fmt.Fprintf(&b, "\n[user] %s\n", truncate(*m.Content, 300))
+				fmt.Fprintf(&b, "\n[user] %s\n", *m.Content)
 			}
 		case "assistant":
 			if len(m.ToolCalls) > 0 {
 				for _, tc := range m.ToolCalls {
-					fmt.Fprintf(&b, "[tool_call] %s(%s)\n", tc.Function.Name, truncate(tc.Function.Arguments, 100))
+					fmt.Fprintf(&b, "[tool_call] %s(%s)\n", tc.Function.Name, tc.Function.Arguments)
 				}
 			}
 			if m.Content != nil && *m.Content != "" {
-				fmt.Fprintf(&b, "[assistant] %s\n", truncate(*m.Content, 500))
+				fmt.Fprintf(&b, "[assistant] %s\n", *m.Content)
 			}
 		case "tool":
 			if m.Content != nil {
-				fmt.Fprintf(&b, "[tool_result] %s\n", truncate(*m.Content, 200))
+				fmt.Fprintf(&b, "[tool_result] %s\n", *m.Content)
 			}
 		}
 	}

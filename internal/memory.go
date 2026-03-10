@@ -253,19 +253,15 @@ func renderTrajectory(msgs []Message) string {
 		case "assistant":
 			if len(m.ToolCalls) > 0 {
 				for _, tc := range m.ToolCalls {
-					fmt.Fprintf(&b, "[tool_call] %s(%s)\n", tc.Function.Name, truncate(tc.Function.Arguments, 200))
+					fmt.Fprintf(&b, "[tool_call] %s(%s)\n", tc.Function.Name, tc.Function.Arguments)
 				}
 			}
 			if m.Content != nil && *m.Content != "" {
-				text := *m.Content
-				text = truncate(text, 1500)
-				fmt.Fprintf(&b, "[assistant] %s\n", text)
+				fmt.Fprintf(&b, "[assistant] %s\n", *m.Content)
 			}
 		case "tool":
 			if m.Content != nil {
-				text := *m.Content
-				text = truncate(text, 500)
-				fmt.Fprintf(&b, "[tool_result] %s\n", text)
+				fmt.Fprintf(&b, "[tool_result] %s\n", *m.Content)
 			}
 		}
 	}
