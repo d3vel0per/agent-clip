@@ -110,6 +110,41 @@ func ListEvents(db *sql.DB, topicID string, includeCanceled bool) ([]Event, erro
 	return events, rows.Err()
 }
 
+func UpdateEvent(db *sql.DB, eventID string, updates map[string]string) (*Event, error) {
+	var sets []string
+	var args []any
+	for k, v := range updates {
+		switch k {
+		case "topic":
+			sets = append(sets, "topic_id = ?")
+			args = append(args, v)
+		case "prompt":
+			sets = append(sets, "prompt = ?")
+			args = append(args, v)
+		case "tz":
+			sets = append(sets, "timezone = ?")
+			args = append(args, v)
+		default:
+			return nil, fmt.Errorf("unsupported update field: %s", k)
+		}
+	}
+	if len(sets) == 0 {
+		return nil, fmt.Errorf("nothing to update")
+	}
+	args = append(args, eventID, EventStatusScheduled)
+	res, err := db.Exec(`UPDATE events SET `+strings.Join(sets, ", ")+` WHERE id = ? AND status = ?`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("update event: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil, fmt.Errorf("event %s not found or not scheduled", eventID)
+	}
+	// Return updated event
+	row := db.QueryRow(`SELECT id, topic_id, prompt, schedule_kind, schedule_value, timezone, next_run_at, last_run_at, status, created_at, canceled_at FROM events WHERE id = ?`, eventID)
+	return scanEvent(row)
+}
+
 func CancelEvent(db *sql.DB, eventID string) error {
 	now := time.Now().Unix()
 	res, err := db.Exec(`UPDATE events SET status = ?, canceled_at = ? WHERE id = ? AND status = ?`, EventStatusCanceled, now, eventID, EventStatusScheduled)
@@ -293,15 +328,18 @@ Subcommands:
   event create once --prompt "..." --at "2026-03-11T18:00:00-07:00" [--topic TOPIC] [--tz America/Los_Angeles]
   event create daily --prompt "..." --time HH:MM [--topic TOPIC] [--tz America/Los_Angeles]
   event list [--topic TOPIC] [--all]
+  event update <event-id> [--topic TOPIC] [--prompt "..."] [--tz TIMEZONE]
   event cancel <event-id>`, func(args []string, stdin string) (string, error) {
 		if len(args) == 0 {
-			return "", fmt.Errorf("usage: event <create|list|cancel> ...")
+			return "", fmt.Errorf("usage: event <create|list|update|cancel> ...")
 		}
 		switch args[0] {
 		case "create":
 			return eventCreateCommand(db, args[1:])
 		case "list":
 			return eventListCommand(db, args[1:])
+		case "update":
+			return eventUpdateCommand(db, args[1:])
 		case "cancel":
 			return eventCancelCommand(db, args[1:])
 		default:
@@ -381,6 +419,26 @@ func eventListCommand(db *sql.DB, args []string) (string, error) {
 		lines = append(lines, formatEventLine(&events[i]))
 	}
 	return strings.Join(lines, "\n"), nil
+}
+
+func eventUpdateCommand(db *sql.DB, args []string) (string, error) {
+	if len(args) < 2 {
+		return "", fmt.Errorf("usage: event update <event-id> [--topic TOPIC] [--prompt \"...\"] [--tz TIMEZONE]")
+	}
+	eventID := args[0]
+	updates := make(map[string]string)
+	for i := 1; i < len(args); i++ {
+		if !strings.HasPrefix(args[i], "--") || i+1 >= len(args) {
+			return "", fmt.Errorf("expected --key value pairs after event-id")
+		}
+		updates[strings.TrimPrefix(args[i], "--")] = args[i+1]
+		i++
+	}
+	event, err := UpdateEvent(db, eventID, updates)
+	if err != nil {
+		return "", err
+	}
+	return formatEventLine(event), nil
 }
 
 func eventCancelCommand(db *sql.DB, args []string) (string, error) {
