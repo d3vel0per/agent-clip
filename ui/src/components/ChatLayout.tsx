@@ -7,18 +7,19 @@ import { SettingsPanel } from "./SettingsPanel";
 import { SkillPanel } from "./SkillPanel";
 import { SetupPage } from "./SetupPage";
 import { Sheet, SheetContent } from "./ui/sheet";
-import { Menu, Plus, ArrowDown } from "lucide-react";
+import { Menu, Plus, Sidebar as SidebarIcon } from "lucide-react";
 import { Button } from "./ui/button";
 import { useI18n } from "../lib/i18n";
 import { getConfig, isConfigReady, type AgentConfig } from "../lib/agent";
+import { motion, AnimatePresence } from "framer-motion";
 
 export function ChatLayout() {
   const chat = useChat();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [configOpen, setConfigOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [agentName, setAgentName] = useState("Clip");
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
   const messageListRef = useRef<MessageListHandle>(null);
   const { t } = useI18n();
 
@@ -52,7 +53,13 @@ export function ChatLayout() {
   if (configState === null) {
     return (
       <div className="flex items-center justify-center h-[100dvh] bg-bg-base">
-        <div className="text-text-mute text-sm animate-pulse">Loading...</div>
+        <motion.div 
+          animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+          className="text-brand-primary font-bold tracking-[0.2em] text-xs uppercase"
+        >
+          Initializing Resonance...
+        </motion.div>
       </div>
     );
   }
@@ -81,11 +88,29 @@ export function ChatLayout() {
   );
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-bg-base text-text-main selection:bg-brand-primary/20 animate-in-up">
-      {/* Desktop Sidebar */}
-      <div className="hidden md:flex w-[280px] flex-shrink-0 glass-sidebar z-30">
-        {sidebarContent}
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-bg-base text-text-main selection:bg-brand-primary/20 relative">
+      {/* Background Decor */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-brand-primary/5 rounded-full blur-[120px]" />
+        <div className="absolute top-[20%] -right-[5%] w-[30%] h-[30%] bg-brand-primary/3 rounded-full blur-[100px]" />
       </div>
+
+      {/* Desktop Sidebar */}
+      <AnimatePresence initial={false}>
+        {sidebarOpen && (
+          <motion.div 
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 280, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+            className="hidden md:flex flex-shrink-0 glass-sidebar z-30 overflow-hidden"
+          >
+            <div className="w-[280px] h-full">
+              {sidebarContent}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Mobile Sidebar (Sheet) */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
@@ -95,24 +120,33 @@ export function ChatLayout() {
       </Sheet>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Header */}
         <header
-          className="flex-shrink-0 h-14 border-b border-border-subtle flex items-center px-4 md:px-6 justify-between bg-bg-surface/40 backdrop-blur-md z-20 pt-[env(safe-area-inset-top)]"
+          className="flex-shrink-0 h-14 border-b border-border/40 flex items-center px-4 md:px-6 justify-between bg-bg-surface/40 backdrop-blur-md z-20 pt-[env(safe-area-inset-top)]"
           style={{ WebkitAppRegion: "drag" } as any}
         >
           <div className="flex items-center gap-4 w-full" style={{ WebkitAppRegion: "no-drag" } as any}>
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden shrink-0 -ml-2 text-text-mute hover:text-text-main hover:bg-bg-base/50 rounded-md transition-all"
+              className="md:hidden shrink-0 -ml-2 text-text-mute hover:text-text-main hover:bg-bg-base/50 rounded-xl"
               onClick={() => setMobileMenuOpen(true)}
             >
-              <Menu className="h-4 w-4" />
+              <Menu className="h-5 w-5" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden md:flex shrink-0 -ml-2 text-text-mute hover:text-text-main hover:bg-bg-base/50 rounded-xl transition-transform"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              <SidebarIcon className={`h-5 w-5 transition-transform duration-300 ${!sidebarOpen ? 'rotate-180' : ''}`} />
             </Button>
 
             <div className="flex flex-col min-w-0 flex-1 md:text-left text-center">
-              <h1 className="font-semibold text-[11px] tracking-[0.2em] truncate text-text-mute uppercase">
+              <h1 className="font-bold text-[11px] tracking-[0.3em] truncate text-text-mute uppercase opacity-60">
                 {activeTopic ? activeTopic.name : t("New Chat")}
               </h1>
             </div>
@@ -120,50 +154,47 @@ export function ChatLayout() {
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden shrink-0 -mr-2 text-text-mute hover:text-text-main hover:bg-bg-base/50 rounded-md transition-all"
+              className="shrink-0 -mr-2 text-text-mute hover:text-text-main hover:bg-bg-base/50 rounded-xl"
               onClick={() => chat.selectTopic(null)}
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-5 w-5" />
             </Button>
           </div>
         </header>
 
         {/* Global Error Toast */}
-        {chat.error && (
-          <div className="bg-destructive/5 text-destructive px-6 py-2 text-[12px] font-medium text-center border-b border-destructive/10 z-30 shrink-0">
-            {chat.error}
-          </div>
-        )}
+        <AnimatePresence>
+          {chat.error && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="bg-destructive/5 text-destructive px-6 py-2.5 text-[12px] font-bold text-center border-b border-destructive/10 z-30 shrink-0 uppercase tracking-wider"
+            >
+              {chat.error}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Messages */}
         <div className="flex-1 overflow-hidden relative">
-          <div className="h-full w-full max-w-[850px] mx-auto">
-            <MessageList ref={messageListRef} messages={chat.messages} isStreaming={chat.isStreaming} onSendPrompt={chat.send} agentName={agentName} onScrollButtonChange={setShowScrollBtn} />
-          </div>
+          <MessageList 
+            ref={messageListRef} 
+            messages={chat.messages} 
+            isStreaming={chat.isStreaming} 
+            onSendPrompt={chat.send} 
+            agentName={agentName} 
+          />
         </div>
 
         {/* Input Composer (Floating) */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 md:p-6 pointer-events-none z-20">
-          <div className="max-w-[800px] mx-auto pointer-events-auto relative">
-            {showScrollBtn && (
-              <div className="absolute -top-12 left-1/2 -translate-x-1/2">
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="rounded-full shadow-md w-8 h-8 opacity-80 hover:opacity-100 border border-border"
-                  onClick={() => messageListRef.current?.scrollToBottom()}
-                >
-                  <ArrowDown className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
-            <ChatComposer
-              onSend={(msg, topicId, files) => chat.send(msg, topicId ?? chat.currentTopicId ?? undefined, files)}
-              onCancel={chat.cancel}
-              isStreaming={chat.isStreaming}
-              agentName={agentName}
-            />
-          </div>
+        <div className="relative z-20">
+          <ChatComposer
+            onSend={(msg, topicId, files) => chat.send(msg, topicId ?? chat.currentTopicId ?? undefined, files)}
+            onCancel={chat.cancel}
+            isStreaming={chat.isStreaming}
+            agentName={agentName}
+          />
         </div>
       </div>
 

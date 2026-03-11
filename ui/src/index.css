@@ -13,6 +13,30 @@
 @import "@fontsource/jetbrains-mono/400.css";
 @import "@fontsource/jetbrains-mono/500.css";
 
+:root {
+  --shadow-tactile: 0 4px 30px rgb(0 0 0 / 0.08);
+  --shadow-glow: 0 0 8px var(--color-brand-primary);
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-base: oklch(16% 0.01 240);
+    --color-bg-sidebar: oklch(13% 0.01 240);
+    --color-bg-surface: oklch(20% 0.01 240);
+    --color-brand-primary: oklch(68% 0.10 250);
+    --color-text-main: oklch(90% 0.005 240);
+    --color-text-mute: oklch(58% 0.01 240);
+    --color-border-subtle: oklch(24% 0.01 240);
+
+    --color-primary-foreground: oklch(16% 0.01 240);
+    --shadow-tactile: 0 4px 30px rgb(0 0 0 / 0.3);
+  }
+}
+
 @theme {
   --font-sans: "Inter", -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
@@ -50,24 +74,8 @@
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
-
-  --shadow-tactile: 0 4px 30px rgba(0, 0, 0, 0.08);
-  --shadow-glow: 0 0 8px var(--color-brand-primary);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg-base: oklch(16% 0.01 240);
-    --color-bg-sidebar: oklch(13% 0.01 240);
-    --color-bg-surface: oklch(20% 0.01 240);
-    --color-brand-primary: oklch(68% 0.10 250);
-    --color-text-main: oklch(90% 0.005 240);
-    --color-text-mute: oklch(58% 0.01 240);
-    --color-border-subtle: oklch(24% 0.01 240);
-
-    --color-primary-foreground: oklch(16% 0.01 240);
-    --shadow-tactile: 0 4px 30px rgba(0, 0, 0, 0.3);
-  }
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
 }
 
 @layer base {
@@ -114,10 +122,30 @@
     line-height: 1.65;
   }
   .prose p {
-    @apply mb-3;
+    @apply mb-3 last:mb-0;
+  }
+  
+  .prose pre {
+    @apply my-4 rounded-xl border border-border/40 bg-muted/30 p-4 font-mono text-sm leading-relaxed overflow-x-auto;
+  }
+  
+  .prose code {
+    @apply font-mono text-[0.9em] font-medium text-brand-primary bg-brand-primary/5 px-1.5 py-0.5 rounded-md;
+  }
+  
+  .prose pre code {
+    @apply p-0 text-text-main bg-transparent;
   }
 
   .select-field {
     @apply flex h-10 w-full rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm transition-all focus:outline-none focus:ring-2 focus:ring-brand-primary/20 appearance-none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
