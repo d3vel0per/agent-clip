@@ -4,8 +4,9 @@
 > **禁止改写、摘要或节选。**
 >
 > ```bash
-> SPEC=$(cat gemini-ui-spec.md)
-> gemini -m gemini-3-flash-preview -y -p "
+> cd ui/
+> SPEC=$(cat ../gemini-ui-spec.md)
+> GOOGLE_CLOUD_LOCATION=global gemini -m gemini-3-flash-preview --yolo -p "
 > <design-spec>
 > $SPEC
 > </design-spec>
@@ -109,11 +110,34 @@ sidebar-border, sidebar-ring
 
 ---
 
+## Tailwind CSS v4 `@theme` 规则（关键约束）
+
+`@theme` 块**只支持**以下命名空间的 CSS 变量，用于生成对应的 utility class：
+
+| 命名空间 | 生成的 utility | 示例 |
+|-----------|---------------|------|
+| `--color-*` | `bg-*`, `text-*`, `border-*` | `--color-primary: oklch(60% 0.12 250)` |
+| `--font-*` | `font-*` | `--font-sans: "Inter", sans-serif` |
+| `--radius-*` | `rounded-*` | `--radius-lg: 12px` |
+| `--spacing-*` | `p-*`, `m-*`, `gap-*` | `--spacing-lg: 2rem` |
+| `--breakpoint-*` | responsive prefixes | `--breakpoint-md: 768px` |
+
+**`@theme` 不支持**：
+- `--shadow-*`（自定义 shadow 值）
+- `--transition-*`
+- 任何不在上述命名空间的自定义变量
+
+**自定义 shadow、transition 等变量必须放在 `:root {}` 中**，不能放 `@theme` 内。
+
+**颜色透明度语法**：使用 `rgb(0 0 0 / 0.1)` 而非 `rgba(0, 0, 0, 0.1)`。
+
+---
+
 ## 实现规范
 
-1. **CSS 变量定义**：在 `index.css` 的 `@theme` 块中定义所有 token，light/dark 各一套
+1. **CSS 变量定义**：`@theme` 块中定义颜色/字体/圆角 token；`:root` 中定义 shadow 等自定义变量
 2. **组件使用**：组件中只引用 token 变量（如 `bg-background`、`text-foreground`），不硬编码颜色值
-3. **圆角**：统一用 `--radius` 变量，推荐 0.5–1rem
+3. **圆角**：统一用 `--radius-*` 变量，推荐 0.5–1rem
 4. **间距**：优先用 Tailwind 默认间距系统，保持节奏感
 5. **动效**：过渡时间 150–200ms，使用 `ease-out`，不超过 300ms
 6. **移动端**：默认 mobile-first，安全区用 `env(safe-area-inset-*)`
@@ -122,14 +146,31 @@ sidebar-border, sidebar-ring
 
 ## dark/light 切换
 
-必须同时生成 light 和 dark 两套 token，通过 `prefers-color-scheme` 媒体查询自动切换：
+Light mode token 在 `@theme` 块中定义（默认值）。
+Dark mode **不能**在 `@media` 中嵌套 `@theme`，必须用 `:root` 覆盖变量：
 
 ```css
-/* light mode（默认） */
-@theme { --color-background: oklch(...); /* ... */ }
+/* light mode（默认）— 在 @theme 中定义 */
+@theme {
+  --color-background: oklch(98% 0.005 240);
+  --color-foreground: oklch(28% 0.01 240);
+  /* ... */
+}
 
-/* dark mode */
+/* dark mode — 用 :root 覆盖 */
 @media (prefers-color-scheme: dark) {
-  @theme { --color-background: oklch(...); /* ... */ }
+  :root {
+    --color-background: oklch(16% 0.01 240);
+    --color-foreground: oklch(90% 0.005 240);
+    /* ... */
+  }
 }
 ```
+
+**禁止**在 `@media` 中嵌套 `@theme`（Tailwind v4 编译会报错）。
+
+---
+
+## 验证
+
+所有 UI 修改必须通过 `pnpm build`（不是 `tsc --noEmit`，Vite build 包含 Tailwind 编译更严格）。
