@@ -112,30 +112,39 @@ sidebar-border, sidebar-ring
 
 ## Tailwind CSS v4 `@theme` 规则（关键约束）
 
-`@theme` 块**只支持**以下命名空间的 CSS 变量，用于生成对应的 utility class：
+`@theme` 块支持以下命名空间的 CSS 变量，会生成对应的 utility class：
 
 | 命名空间 | 生成的 utility | 示例 |
 |-----------|---------------|------|
 | `--color-*` | `bg-*`, `text-*`, `border-*` | `--color-primary: oklch(60% 0.12 250)` |
 | `--font-*` | `font-*` | `--font-sans: "Inter", sans-serif` |
+| `--text-*` | `text-*`（字号） | `--text-xl: 1.25rem` |
+| `--font-weight-*` | `font-*` | `--font-weight-bold: 700` |
+| `--tracking-*` | `tracking-*` | `--tracking-wide: 0.025em` |
+| `--leading-*` | `leading-*` | `--leading-tight: 1.25` |
 | `--radius-*` | `rounded-*` | `--radius-lg: 12px` |
 | `--spacing-*` | `p-*`, `m-*`, `gap-*` | `--spacing-lg: 2rem` |
+| `--shadow-*` | `shadow-*` | `--shadow-soft: 0 4px 20px rgb(0 0 0 / 0.04)` |
+| `--inset-shadow-*` | `inset-shadow-*` | `--inset-shadow-xs: inset 0 1px 1px rgb(0 0 0 / 0.05)` |
+| `--drop-shadow-*` | `drop-shadow-*` | `--drop-shadow-md: 0 3px 3px rgb(0 0 0 / 0.12)` |
+| `--blur-*` | `blur-*` | `--blur-md: 12px` |
+| `--ease-*` | `ease-*` | `--ease-out: cubic-bezier(0, 0, 0.2, 1)` |
+| `--animate-*` | `animate-*` | `--animate-spin: spin 1s linear infinite` |
+| `--aspect-*` | `aspect-*` | `--aspect-video: 16/9` |
 | `--breakpoint-*` | responsive prefixes | `--breakpoint-md: 768px` |
 
-**`@theme` 不支持**：
-- `--shadow-*`（自定义 shadow 值）
-- `--transition-*`
-- 任何不在上述命名空间的自定义变量
+**不在上述命名空间的变量**不会生成 utility class，应放在 `:root {}` 中。
 
-**自定义 shadow、transition 等变量必须放在 `:root {}` 中**，不能放 `@theme` 内。
-
-**颜色透明度语法**：使用 `rgb(0 0 0 / 0.1)` 而非 `rgba(0, 0, 0, 0.1)`。
+**关键限制**：
+- **`@theme` 必须在顶层**，不能嵌套在 `@media`、选择器或其他规则内
+- Shadow 值推荐使用 `rgb(0 0 0 / 0.1)` 语法（现代标准），`rgba()` 也可工作但不推荐
+- 引用其他 CSS 变量时需用 `@theme inline { ... }`
 
 ---
 
 ## 实现规范
 
-1. **CSS 变量定义**：`@theme` 块中定义颜色/字体/圆角 token；`:root` 中定义 shadow 等自定义变量
+1. **CSS 变量定义**：`@theme` 块中定义所有 token（颜色/字体/圆角/shadow 等）；仅非标准命名空间的变量放 `:root`
 2. **组件使用**：组件中只引用 token 变量（如 `bg-background`、`text-foreground`），不硬编码颜色值
 3. **圆角**：统一用 `--radius-*` 变量，推荐 0.5–1rem
 4. **间距**：优先用 Tailwind 默认间距系统，保持节奏感
