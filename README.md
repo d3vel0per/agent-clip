@@ -55,6 +55,7 @@ Agent Clip (this repo)
   │   ├─ Memory:    memory search/recent/store/facts/forget
   │   ├─ Topics:    topic list/info/runs/run/search/rename
   │   ├─ Clips:     clip <name> <command> [args...] / pull / push
+  │   │              (supports Edge Clips — e.g. iPhone capabilities)
   │   ├─ Browser:   browser <action> [params...] (auto-saves screenshots)
   │   ├─ Chaining:  cmd1 | cmd2 && cmd3 ; cmd4
   │   └─ Utils:     echo, time, help, grep, head, tail, wc
