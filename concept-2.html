@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Clip - Void</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&display=swap');
+
+        :root {
+            --bg: oklch(0% 0 0);
+            --fg: oklch(90% 0 0);
+            --accent: oklch(75% 0.15 250); /* Electric Blue */
+            --dim: oklch(40% 0 0);
+            --border: oklch(20% 0 0);
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: oklch(100% 0 0);
+                --fg: oklch(10% 0 0);
+                --accent: oklch(50% 0.2 260);
+                --dim: oklch(60% 0 0);
+                --border: oklch(85% 0 0);
+            }
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; border-radius: 0 !important; }
+        
+        body {
+            background: var(--bg);
+            color: var(--fg);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            line-height: 1.4;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        aside {
+            width: 200px;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+        }
+
+        .logo {
+            font-weight: 800;
+            color: var(--accent);
+            margin-bottom: 2rem;
+            letter-spacing: -1px;
+        }
+
+        nav li {
+            list-style: none;
+            padding: 0.5rem 0;
+            cursor: pointer;
+            border-bottom: 1px solid transparent;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        nav li.active { color: var(--accent); }
+        nav li:hover { border-bottom: 1px solid var(--dim); }
+
+        .topic-meta { font-size: 10px; color: var(--dim); display: block; }
+
+        /* Main Area */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 600px;
+            border-right: 1px solid var(--border);
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        .message { margin-bottom: 2rem; }
+        .prefix { color: var(--accent); margin-right: 0.5rem; font-weight: bold; }
+        
+        .thinking {
+            color: var(--dim);
+            padding: 0.5rem 0;
+            border-left: 2px solid var(--border);
+            padding-left: 1rem;
+            margin: 1rem 0;
+        }
+
+        pre {
+            background: var(--border);
+            padding: 1rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+            border-left: 2px solid var(--accent);
+        }
+
+        .tool-call {
+            background: var(--accent);
+            color: var(--bg);
+            padding: 0.2rem 0.5rem;
+            display: inline-block;
+            margin: 0.5rem 0;
+            font-weight: bold;
+        }
+
+        /* Composer */
+        .composer {
+            border-top: 1px solid var(--border);
+            padding: 1rem;
+            display: flex;
+            gap: 1rem;
+        }
+
+        textarea {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--fg);
+            font-family: var(--font-mono);
+            resize: none;
+            outline: none;
+            height: 3em;
+        }
+
+        .cmd { color: var(--accent); font-weight: bold; cursor: pointer; }
+
+        /* Empty State */
+        .empty {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: var(--dim);
+        }
+
+        .cursor {
+            display: inline-block;
+            width: 8px;
+            height: 15px;
+            background: var(--accent);
+            animation: blink 1s infinite;
+            vertical-align: middle;
+        }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+    <aside>
+        <div class="logo">VOID_AGENT_v2</div>
+        <nav>
+            <li class="active">
+                <span class="topic-meta">2026.03.11</span>
+                PHOENIX_REPORT
+            </li>
+            <li>
+                <span class="topic-meta">2026.03.10</span>
+                MARKET_DATA
+            </li>
+            <li>
+                <span class="topic-meta">2026.03.09</span>
+                QUANTUM_ZH_CN
+            </li>
+            <li>
+                <span class="topic-meta">2026.03.08</span>
+                REF_LOOP_GO
+            </li>
+            <li>
+                <span class="topic-meta">2026.03.07</span>
+                KYOTO_PLAN
+            </li>
+            <li>
+                <span class="topic-meta">2026.03.06</span>
+                AGENT_DS
+            </li>
+        </nav>
+    </aside>
+
+    <main>
+        <div class="messages">
+            <div class="message">
+                <span class="prefix">USER@HOST:~$</span>
+                Analyze perform_v3.py. Check for leaks.
+                <br>
+                <span style="color:var(--dim)">[LANG:ZH] 同时检查内存分配效率。</span>
+            </div>
+
+            <div class="message">
+                <span class="prefix">AGENT:</span>
+                <div class="thinking">
+                    > SCANNING perform_v3.py...
+                    > DETECTED: O(N^2) AT LINE 42.
+                    > ALLOC_TRACER: START.
+                </div>
+                PRIMARY BOTTLENECK: DATA_VECTORIZATION_FAILURE.
+                <br>
+                PATCH_01:
+                <pre>import pandas as pd
+def patch(data):
+    return pd.DataFrame(data).eval("val * exp(rate)")</pre>
+                
+                <div class="tool-call">EXEC: sys_profile --target=perform_v3.py</div>
+                <br>
+                <span style="color:var(--accent)">RESULT: 40% LATENCY REDUCTION. MEM_STABLE.</span>
+                <br>
+                已完成分析。优化版提升 40% 效率，未发现内存泄漏。
+            </div>
+        </div>
+
+        <div class="composer">
+            <span class="prefix">></span>
+            <textarea placeholder="awaiting input..."></textarea>
+            <span class="cmd">[SEND]</span>
+        </div>
+    </main>
+
+    <!-- For preview: toggle this -->
+    <div id="empty-state" style="display:none; flex:1; background:var(--bg); z-index:10;">
+        <div class="empty">
+            <div style="font-size: 2rem; margin-bottom: 1rem;">CLIP_NULL</div>
+            <div>STATUS: IDLE</div>
+            <div style="margin-top:2rem">SELECT_TOPIC or NEW_RUN<span class="cursor"></span></div>
+        </div>
+    </div>
+</body>
+</html>

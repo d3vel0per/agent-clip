@@ -8,10 +8,8 @@ import { SkillPanel } from "./SkillPanel";
 import { SetupPage } from "./SetupPage";
 import { Sheet, SheetContent } from "./ui/sheet";
 import { Menu, Plus, Sidebar as SidebarIcon } from "lucide-react";
-import { Button } from "./ui/button";
 import { useI18n } from "../lib/i18n";
 import { getConfig, isConfigReady, type AgentConfig } from "../lib/agent";
-import { motion, AnimatePresence } from "framer-motion";
 
 export function ChatLayout() {
   const chat = useChat();
@@ -52,34 +50,14 @@ export function ChatLayout() {
   // Show loading while checking config
   if (configState === null) {
     return (
-      <div className="flex flex-col items-center justify-center h-[100dvh] bg-background">
-        <div className="relative">
-          <motion.div 
-            animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }}
-            transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-            className="w-24 h-24 bg-primary/20 rounded-full blur-2xl absolute -top-4 -left-4"
-          />
-          <motion.div 
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="relative flex flex-col items-center gap-4"
-          >
-            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20 shadow-glow">
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <span className="text-primary font-bold tracking-[0.3em] text-[10px] uppercase">
-                Initializing Resonance
-              </span>
-              <div className="h-[2px] w-12 bg-primary/10 rounded-full overflow-hidden">
-                <motion.div 
-                  animate={{ x: [-48, 48] }}
-                  transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}
-                  className="w-full h-full bg-primary"
-                />
-              </div>
-            </div>
-          </motion.div>
+      <div className="flex flex-col items-center justify-center h-[100dvh] bg-paper">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-2 border-ink flex items-center justify-center animate-pulse">
+            <div className="w-2 h-2 bg-ink" />
+          </div>
+          <span className="signature-label text-ink animate-pulse">
+            Initializing Resonance
+          </span>
         </div>
       </div>
     );
@@ -109,50 +87,18 @@ export function ChatLayout() {
   );
 
   return (
-    <div className="flex h-[100dvh] w-full overflow-hidden bg-background text-foreground selection:bg-primary/20 relative font-sans">
-      {/* Background Decor */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <motion.div 
-          animate={{ 
-            scale: [1, 1.1, 1],
-            x: [0, 20, 0],
-            y: [0, -20, 0]
-          }}
-          transition={{ repeat: Infinity, duration: 20, ease: "linear" }}
-          className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-primary/5 rounded-full blur-[120px]" 
-        />
-        <motion.div 
-          animate={{ 
-            scale: [1, 1.2, 1],
-            x: [0, -30, 0],
-            y: [0, 30, 0]
-          }}
-          transition={{ repeat: Infinity, duration: 25, ease: "linear" }}
-          className="absolute top-[20%] -right-[5%] w-[40%] h-[40%] bg-primary/3 rounded-full blur-[100px]" 
-        />
-        <div className="absolute bottom-0 left-0 right-0 h-64 bg-linear-to-t from-background to-transparent opacity-60" />
-      </div>
-
+    <div className="flex h-[100dvh] w-full overflow-hidden bg-paper text-ink selection:bg-ink selection:text-paper font-sans">
+      
       {/* Desktop Sidebar */}
-      <AnimatePresence initial={false} mode="wait">
-        {sidebarOpen && (
-          <motion.div 
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 300, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
-            className="hidden md:flex flex-shrink-0 z-30 overflow-hidden border-r border-border/40 bg-sidebar"
-          >
-            <div className="w-[300px] h-full">
-              {sidebarContent}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {sidebarOpen && (
+        <div className="hidden md:flex flex-shrink-0 w-[300px] z-30">
+          {sidebarContent}
+        </div>
+      )}
 
       {/* Mobile Sidebar (Sheet) */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="p-0 w-[300px] border-r-0 bg-sidebar">
+        <SheetContent side="left" className="p-0 w-[300px] border-r-0 bg-paper">
           {sidebarContent}
         </SheetContent>
       </Sheet>
@@ -161,60 +107,45 @@ export function ChatLayout() {
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Header */}
         <header
-          className="flex-shrink-0 h-16 border-b border-border/40 flex items-center px-4 md:px-6 justify-between bg-background/60 backdrop-blur-xl z-20 pt-[env(safe-area-inset-top)]"
+          className="flex-shrink-0 h-14 border-b border-border flex items-center px-4 md:px-6 justify-between bg-surface z-20 pt-[env(safe-area-inset-top)]"
           style={{ WebkitAppRegion: "drag" } as any}
         >
           <div className="flex items-center gap-4 w-full" style={{ WebkitAppRegion: "no-drag" } as any}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden shrink-0 -ml-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl"
+            <button
+              className="md:hidden shrink-0 p-1 text-ink hover:bg-surface-hover"
               onClick={() => setMobileMenuOpen(true)}
             >
               <Menu className="h-5 w-5" />
-            </Button>
+            </button>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              className="hidden md:flex shrink-0 -ml-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl transition-all active:scale-95"
+            <button
+              className="hidden md:flex shrink-0 p-1 text-ink hover:bg-surface-hover"
               onClick={() => setSidebarOpen(!sidebarOpen)}
             >
-              <SidebarIcon className={`h-5 w-5 transition-transform duration-500 ${!sidebarOpen ? 'rotate-180' : ''}`} />
-            </Button>
+              <SidebarIcon className={`h-5 w-5`} />
+            </button>
 
             <div className="flex flex-col min-w-0 flex-1 md:text-left text-center">
-              <h1 className="font-bold text-[10px] tracking-[0.4em] truncate text-muted-foreground/60 uppercase">
+              <h1 className="signature-label truncate text-ink">
                 {activeTopic ? activeTopic.name : t("New Chat")}
               </h1>
             </div>
 
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 -mr-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl transition-all active:scale-95"
+            <button
+              className="shrink-0 p-1 text-ink hover:bg-surface-hover"
               onClick={() => chat.selectTopic(null)}
             >
               <Plus className="h-5 w-5" />
-            </Button>
+            </button>
           </div>
         </header>
 
         {/* Global Error Toast */}
-        <AnimatePresence>
-          {chat.error && (
-            <motion.div 
-              initial={{ y: -20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -20, opacity: 0 }}
-              className="px-6 py-3 z-30 shrink-0"
-            >
-              <div className="bg-destructive/10 text-destructive text-[12px] font-bold text-center border border-destructive/20 py-2 rounded-xl uppercase tracking-wider backdrop-blur-md shadow-sm">
-                {chat.error}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {chat.error && (
+          <div className="px-6 py-2 z-30 shrink-0 bg-urgent/10 border-b border-urgent text-urgent text-[10px] font-mono font-bold text-center uppercase tracking-wider">
+            {chat.error}
+          </div>
+        )}
 
         {/* Messages */}
         <div className="flex-1 overflow-hidden relative">
@@ -227,8 +158,8 @@ export function ChatLayout() {
           />
         </div>
 
-        {/* Input Composer (Floating) */}
-        <div className="relative z-20">
+        {/* Input Composer */}
+        <div className="relative z-20 border-t border-border bg-surface">
           <ChatComposer
             onSend={(msg, topicId, files) => chat.send(msg, topicId ?? chat.currentTopicId ?? undefined, files)}
             onCancel={chat.cancel}

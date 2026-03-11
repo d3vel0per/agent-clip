@@ -63,6 +63,13 @@ const translations: Record<Locale, Record<string, string>> = {
     "built-in": "built-in",
     "Memory": "Memory",
     "Events": "Events",
+    "RESONATING": "RESONATING",
+    "PROCESS_TRACED": "PROCESS TRACED",
+    "Initializing resonance...": "Initializing resonance...",
+    "INPUT_PARAMETERS": "INPUT PARAMETERS",
+    "EXECUTION_RESULT": "EXECUTION RESULT",
+    "YOU": "YOU",
+    "Responding": "Responding",
   },
   "zh-CN": {
     "New Chat": "新建对话",
@@ -124,6 +131,13 @@ const translations: Record<Locale, Record<string, string>> = {
     "built-in": "内建",
     "Memory": "记忆",
     "Events": "事件",
+    "RESONATING": "正在共鸣",
+    "PROCESS_TRACED": "过程追踪",
+    "Initializing resonance...": "正在初始化共鸣...",
+    "INPUT_PARAMETERS": "输入参数",
+    "EXECUTION_RESULT": "执行结果",
+    "YOU": "你",
+    "Responding": "正在响应",
   },
 };
 

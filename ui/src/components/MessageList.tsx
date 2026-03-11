@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState, useImperativeHandle, forwardRef } from "react";
 import type { ChatMessage } from "../lib/types";
 import { MessageBubble } from "./MessageBubble";
-import { motion, AnimatePresence } from "framer-motion";
 import { Code, Sparkles, Terminal, FileText, Zap, ChevronDown } from "lucide-react";
 import { useI18n } from "../lib/i18n";
-import { Button } from "./ui/button";
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -83,123 +81,76 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
 
-  return (
-    <div className="flex-1 relative overflow-hidden flex flex-col h-full bg-transparent">
-      <AnimatePresence mode="wait">
-        {messages.length === 0 ? (
-          <motion.div 
-            key="empty"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="flex-1 flex flex-col items-center justify-center p-8 h-full w-full"
-          >
-            <div className="max-w-3xl w-full space-y-16">
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-                className="text-center space-y-6"
+  if (messages.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 h-full w-full bg-paper overflow-y-auto no-scrollbar">
+        <div className="max-w-2xl w-full space-y-12">
+          <div className="space-y-4">
+            <div className="w-12 h-12 border border-ink flex items-center justify-center mb-8">
+              <Sparkles className="w-6 h-6 text-ink" />
+            </div>
+            <h2 className="text-5xl md:text-6xl font-serif font-bold tracking-tight text-ink leading-tight">
+              {t("How can I help you today?")}
+            </h2>
+            <p className="text-muted font-serif italic text-lg opacity-80 border-l border-border pl-6 py-2">
+              {t("I'm your AI assistant, ready to help with code, analysis, writing, and more.")}
+            </p>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-px border border-border bg-border">
+            {[
+              { icon: FileText, label: t("Summarize text"), desc: "Get the gist of any document" },
+              { icon: Code, label: t("Write code"), desc: "Build components or solve bugs" },
+              { icon: Terminal, label: t("Run sandbox"), desc: "Execute scripts in a safe env" },
+              { icon: Zap, label: t("Analyze data"), desc: "Find patterns and insights" },
+            ].map((item) => (
+              <button 
+                key={item.label}
+                onClick={() => onSendPrompt?.(item.label)}
+                className="group flex items-start gap-4 p-6 bg-paper hover:bg-surface-hover transition-colors text-left"
               >
-                <div className="relative inline-flex mb-2">
-                  <motion.div 
-                    animate={{ scale: [1, 1.2, 1], rotate: [0, 5, -5, 0] }}
-                    transition={{ repeat: Infinity, duration: 6, ease: "linear" }}
-                    className="absolute inset-0 bg-primary/20 blur-2xl rounded-full"
-                  />
-                  <div className="relative w-20 h-20 rounded-3xl bg-primary/10 text-primary flex items-center justify-center ring-1 ring-primary/20 shadow-glow overflow-hidden">
-                    <Sparkles className="w-10 h-10" />
-                    <motion.div 
-                      animate={{ x: [-100, 100] }}
-                      transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
-                      className="absolute inset-0 bg-linear-to-r from-transparent via-white/20 to-transparent skew-x-12"
-                    />
-                  </div>
+                <div className="w-10 h-10 border border-border flex items-center justify-center group-hover:border-ink transition-colors shrink-0">
+                  <item.icon className="w-5 h-5 text-muted group-hover:text-ink transition-colors" />
                 </div>
-                <div className="space-y-2">
-                  <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-                    {t("How can I help you today?")}
-                  </h2>
-                  <p className="text-muted-foreground text-lg max-w-lg mx-auto leading-relaxed opacity-70">
-                    {t("I'm your AI assistant, ready to help with code, analysis, writing, and more.")}
-                  </p>
+                <div className="flex flex-col">
+                  <span className="signature-label text-ink">{item.label}</span>
+                  <span className="text-[11px] text-muted font-mono uppercase tracking-tight mt-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                    {item.desc}
+                  </span>
                 </div>
-              </motion.div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {[
-                  { icon: FileText, label: t("Summarize text"), color: "primary", desc: "Get the gist of any document" },
-                  { icon: Code, label: t("Write code"), color: "primary", desc: "Build components or solve bugs" },
-                  { icon: Terminal, label: t("Run sandbox"), color: "primary", desc: "Execute scripts in a safe env" },
-                  { icon: Zap, label: t("Analyze data"), color: "primary", desc: "Find patterns and insights" },
-                ].map((item, i) => (
-                  <motion.button 
-                    key={item.label}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 + i * 0.1, duration: 0.4 }}
-                    onClick={() => onSendPrompt?.(item.label)}
-                    className="group relative flex items-start gap-4 p-5 bento-surface hover:border-primary/40 hover:scale-[1.02] active:scale-[0.98] transition-all text-left"
-                  >
-                    <div className="relative w-12 h-12 rounded-xl bg-muted/30 flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary transition-colors border border-border/10 shrink-0">
-                      <item.icon className="w-6 h-6" />
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-bold text-[15px] text-foreground">{item.label}</span>
-                      <span className="text-[12px] text-muted-foreground/60 font-medium">{item.desc}</span>
-                    </div>
-                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <motion.div animate={{ x: [0, 4, 0] }} transition={{ repeat: Infinity, duration: 1.5 }}>
-                        <Zap className="w-3.5 h-3.5 text-primary" />
-                      </motion.div>
-                    </div>
-                  </motion.button>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div 
-            key="list"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="flex-1 overflow-hidden relative h-full"
-          >
-            <div 
-              ref={scrollRef}
-              onScroll={handleScroll}
-              className="h-full overflow-y-auto w-full scroll-smooth no-scrollbar px-4"
-            >
-              <div className="pb-48 pt-8 max-w-4xl mx-auto w-full space-y-8">
-                {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} agentName={agentName} />
-                ))}
-              </div>
-            </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-            <AnimatePresence>
-              {showScrollButton && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                  className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20"
-                >
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={scrollToBottom}
-                    className="rounded-full shadow-tactile border border-border/40 bg-card/80 backdrop-blur-md px-5 py-6 flex gap-3 font-bold text-[13px] text-foreground hover:bg-card transition-all group active:scale-95"
-                  >
-                    <ChevronDown className="w-4 h-4 transition-transform group-hover:translate-y-1" />
-                    {t("New messages")}
-                  </Button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </motion.div>
-        )}
-      </AnimatePresence>
+  return (
+    <div className="flex-1 relative overflow-hidden flex flex-col h-full">
+      <div 
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="h-full overflow-y-auto w-full scroll-smooth no-scrollbar"
+      >
+        <div className="pb-32">
+          {messages.map((msg) => (
+            <MessageBubble key={msg.id} message={msg} agentName={agentName} />
+          ))}
+        </div>
+      </div>
+
+      {showScrollButton && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
+          <button
+            onClick={scrollToBottom}
+            className="ink-button flex items-center gap-3 px-6 h-12 transition-all active:scale-95"
+          >
+            <ChevronDown className="w-4 h-4" />
+            <span>{t("New messages")}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 });

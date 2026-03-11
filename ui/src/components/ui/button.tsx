@@ -4,30 +4,30 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-xl border border-transparent bg-clip-padding text-sm font-bold whitespace-nowrap transition-all outline-none select-none focus-visible:ring-4 focus-visible:ring-primary/10 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-4 aria-invalid:ring-destructive/10 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 active:scale-[0.97]",
+  "group/button inline-flex shrink-0 items-center justify-center border border-transparent text-sm font-bold whitespace-nowrap transition-all outline-none select-none disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:brightness-110 shadow-soft",
+        default: "bg-ink text-paper hover:bg-ink/90",
         outline:
-          "border-border/40 bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground shadow-sm",
+          "border-ink text-ink hover:bg-ink hover:text-paper",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-surface border-border text-ink hover:bg-surface-hover",
         ghost:
-          "hover:bg-muted/50 hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
+          "hover:bg-surface-hover hover:text-ink",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:ring-destructive/20",
-        link: "text-primary underline-offset-4 hover:underline",
+          "border-urgent text-urgent hover:bg-urgent hover:text-paper",
+        link: "text-ink underline-offset-4 hover:underline",
       },
       size: {
         default:
-          "h-10 gap-2 px-4",
-        xs: "h-7 gap-1 rounded-lg px-2 text-xs",
-        sm: "h-8 gap-1.5 rounded-lg px-3 text-[0.8rem]",
-        lg: "h-12 gap-2 px-6 text-base",
+          "h-10 gap-2 px-4 signature-label",
+        xs: "h-7 gap-1 px-2 text-[9px] uppercase tracking-wider",
+        sm: "h-8 gap-1.5 px-3 text-[10px] uppercase tracking-widest",
+        lg: "h-12 gap-2 px-6 text-base signature-label",
         icon: "size-10",
-        "icon-xs": "size-7 rounded-lg",
-        "icon-sm": "size-8 rounded-lg",
+        "icon-xs": "size-7",
+        "icon-sm": "size-8",
         "icon-lg": "size-12",
       },
     },

@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atelier Cinnabar Trace</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,400&family=IBM+Plex+Mono:wght@300;400;500&family=Playfair+Display:ital,wght@0,600;0,800;1,600&display=swap');
+
+        :root {
+            /* Light Mode - Warm Ivory & Cinnabar Trace */
+            --paper: oklch(97% 0.015 85);
+            --ink: oklch(18% 0.01 85);
+            --accent: oklch(40% 0.12 28); /* Aged Oxblood */
+            --grid: oklch(88% 0.01 85);
+            --subtle: oklch(60% 0.01 85);
+            --code-bg: oklch(94% 0.02 85);
+            
+            --font-serif: 'Crimson Pro', serif;
+            --font-display: 'Playfair Display', serif;
+            --font-mono: 'IBM Plex Mono', monospace;
+            
+            --grid-size: 8px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --paper: oklch(22% 0.015 85);
+                --ink: oklch(92% 0.01 85);
+                --accent: oklch(65% 0.12 28); /* Muted Terracotta */
+                --grid: oklch(30% 0.01 85);
+                --subtle: oklch(55% 0.01 85);
+                --code-bg: oklch(18% 0.02 85);
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--paper);
+            color: var(--ink);
+            font-family: var(--font-serif);
+            line-height: 1.6;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+            background-image: 
+                linear-gradient(var(--grid) 1px, transparent 1px),
+                linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+            background-size: var(--grid-size) var(--grid-size);
+        }
+
+        /* --- Sidebar --- */
+        aside {
+            width: 260px;
+            border-right: 1px solid var(--accent);
+            display: flex;
+            flex-direction: column;
+            background: var(--paper);
+            z-index: 10;
+        }
+
+        .sidebar-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--grid);
+        }
+
+        .sidebar-header h1 {
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--accent);
+        }
+
+        .rationale {
+            padding: 16px 24px;
+            font-family: var(--font-serif);
+            font-style: italic;
+            font-size: 0.85rem;
+            color: var(--subtle);
+            border-bottom: 1px solid var(--grid);
+            line-height: 1.4;
+        }
+
+        .topic-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 0;
+        }
+
+        .topic-item {
+            padding: 12px 24px;
+            cursor: pointer;
+            border-bottom: 1px solid transparent;
+            position: relative;
+        }
+
+        .topic-item.active {
+            background: var(--code-bg);
+            border-left: 3px solid var(--accent);
+        }
+
+        .topic-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            display: block;
+            margin-bottom: 2px;
+        }
+
+        .topic-meta {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            color: var(--subtle);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* --- Main Chat (Forum Style) --- */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--paper);
+            border-left: 1px solid var(--grid);
+            border-right: 1px solid var(--grid);
+            box-shadow: 0 0 40px rgba(0,0,0,0.03);
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message {
+            width: 100%;
+            padding: 32px 40px;
+            border-bottom: 1px solid var(--grid);
+            position: relative;
+        }
+
+        .message-header {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .message.user .message-header {
+            color: var(--subtle);
+        }
+
+        .content {
+            font-size: 1.1rem;
+            color: var(--ink);
+        }
+
+        /* --- Collapsible Blocks --- */
+        details {
+            margin: 16px 0;
+            border: 1px solid var(--grid);
+            background: rgba(0,0,0,0.01);
+        }
+
+        summary {
+            list-style: none;
+            padding: 10px 16px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+            background: var(--paper);
+        }
+
+        summary::-webkit-details-marker { display: none; }
+
+        summary::before {
+            content: "[+]";
+            font-size: 0.8rem;
+        }
+
+        details[open] summary::before {
+            content: "[-]";
+        }
+
+        details[open] summary {
+            border-bottom: 1px dashed var(--grid);
+        }
+
+        .details-content {
+            padding: 16px;
+        }
+
+        .thinking {
+            font-family: var(--font-serif);
+            font-style: italic;
+            font-size: 0.95rem;
+            color: var(--subtle);
+            line-height: 1.5;
+        }
+
+        .tool-call {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--accent);
+        }
+
+        /* --- Components --- */
+        pre {
+            background: var(--code-bg);
+            padding: 24px;
+            border: 1px solid var(--grid);
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 20px 0;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.01);
+        }
+
+        code {
+            color: var(--accent);
+        }
+
+        ul, ol {
+            margin: 16px 0 16px 24px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        /* --- Composer --- */
+        .composer {
+            padding: 24px 40px 40px;
+            background: var(--paper);
+            border-top: 2px solid var(--accent);
+        }
+
+        .composer-box {
+            border: 1px solid var(--grid);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: var(--paper);
+        }
+
+        .composer-box textarea {
+            border: none;
+            background: transparent;
+            font-family: var(--font-serif);
+            font-size: 1.1rem;
+            color: var(--ink);
+            resize: none;
+            outline: none;
+            min-height: 80px;
+        }
+
+        .composer-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn-send {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            cursor: pointer;
+        }
+
+        .manifesto {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            transform: rotate(-90deg);
+            transform-origin: bottom right;
+            font-family: var(--font-mono);
+            font-size: 0.6rem;
+            letter-spacing: 4px;
+            color: var(--accent);
+            opacity: 0.4;
+            pointer-events: none;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+
+    <aside>
+        <div class="sidebar-header">
+            <h1>Cinnabar Trace</h1>
+        </div>
+        <div class="rationale">
+            A nod to the authoritative mark of a wax seal or a proofreader’s red pen, deeply rooted in the history of East Asian scholarship.
+        </div>
+        <div class="topic-list">
+            <div class="topic-item active">
+                <span class="topic-meta">TRD // 26-03-11</span>
+                <span class="topic-title">Elegant Algorithms in Python</span>
+            </div>
+            <div class="topic-item">
+                <span class="topic-meta">ARC // 26-03-10</span>
+                <span class="topic-title">Modern Architectural Principles</span>
+            </div>
+            <div class="topic-item">
+                <span class="topic-meta">LOG // 26-03-09</span>
+                <span class="topic-title">Bilingual Poetry Analysis</span>
+            </div>
+        </div>
+    </aside>
+
+    <main>
+        <div class="chat-container">
+            
+            <!-- Message 1: User -->
+            <div class="message user">
+                <div class="message-header">
+                    <span>@USER</span>
+                    <span>2026-03-11 14:20</span>
+                </div>
+                <div class="content">
+                    如何用 Python 实现一个优雅的冒泡排序？
+                </div>
+            </div>
+
+            <!-- Message 2: AI -->
+            <div class="message ai">
+                <div class="message-header">
+                    <span>@AGENT</span>
+                    <span>2026-03-11 14:21</span>
+                </div>
+                
+                <details>
+                    <summary>Internal Reasoning Trace</summary>
+                    <div class="details-content">
+                        <div class="thinking">
+                            Focusing on Pythonic idioms. Swapping in Python is best done via tuple unpacking. Adding an 'early-exit' flag improves the 'elegance' by making the algorithm more efficient for nearly-sorted inputs.
+                        </div>
+                    </div>
+                </details>
+
+                <div class="content">
+                    <p>实现冒泡排序的“优雅”在于保持其结构的纯粹，同时利用 Python 的特性提升可读性。下面是一个带有优化标志（Early Exit）的实现：</p>
+                    
+<pre><code>def bubble_sort(items):
+    """An optimized Bubble Sort implementation."""
+    n = len(items)
+    for i in range(n):
+        swapped = False
+        for j in range(0, n - i - 1):
+            if items[j] > items[j + 1]:
+                items[j], items[j + 1] = items[j + 1], items[j]
+                swapped = True
+        if not swapped:
+            break
+    return items</code></pre>
+                </div>
+            </div>
+
+            <!-- Message 3: User -->
+            <div class="message user">
+                <div class="message-header">
+                    <span>@USER</span>
+                    <span>2026-03-11 14:22</span>
+                </div>
+                <div class="content">
+                    你能用英文解释一下它的时间复杂度吗？Can you explain the time complexity in English?
+                </div>
+            </div>
+
+            <!-- Message 4: AI -->
+            <div class="message ai">
+                <div class="message-header">
+                    <span>@AGENT</span>
+                    <span>2026-03-11 14:23</span>
+                </div>
+                <div class="content">
+                    <p>Certainly. Let us examine the <strong>computational complexity</strong> of this procedure:</p>
+                    <ul>
+                        <li><strong>Worst Case ($O(n^2)$):</strong> 当输入列表完全逆序时。Occurs when the list is sorted in reverse order.</li>
+                        <li><strong>Best Case ($O(n)$):</strong> 得益于 <code>swapped</code> 标志，如果输入已排序，算法仅需遍历一次。Thanks to our optimization, a sorted list requires only one pass.</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Composer -->
+        <div class="composer">
+            <div class="composer-box">
+                <textarea placeholder="Compose your inquiry..."></textarea>
+                <div class="composer-footer">
+                    <div style="font-family: var(--font-mono); font-size: 0.65rem; color: var(--subtle);">
+                        [CTRL + ENTER] TO DISPATCH
+                    </div>
+                    <button class="btn-send">Dispatch</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="manifesto">
+        MATHEMATICAL RIGOR meets EDITORIAL SOUL
+    </div>
+
+</body>
+</html>

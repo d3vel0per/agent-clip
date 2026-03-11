@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Clip - Ink and Paper</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,200..900;1,200..900&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+        :root {
+            --paper: oklch(96% 0.015 85);
+            --ink: oklch(25% 0.01 85);
+            --ink-faded: oklch(45% 0.01 85);
+            --accent: oklch(45% 0.04 30);
+            --border: oklch(85% 0.01 85);
+            --shadow: rgba(0, 0, 0, 0.05);
+            
+            --font-serif: "Crimson Pro", serif;
+            --font-display: "Playfair Display", serif;
+            --font-mono: "Courier Prime", monospace;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --paper: oklch(18% 0.01 260);
+                --ink: oklch(90% 0.01 260);
+                --ink-faded: oklch(70% 0.01 260);
+                --accent: oklch(75% 0.05 40);
+                --border: oklch(30% 0.01 260);
+            }
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            background: var(--paper);
+            color: var(--ink);
+            font-family: var(--font-serif);
+            line-height: 1.6;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            letter-spacing: -0.01em;
+        }
+
+        /* Sidebar */
+        aside {
+            width: 240px;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 1rem;
+            background: var(--paper);
+        }
+
+        .logo {
+            font-family: var(--font-display);
+            font-size: 1.5rem;
+            font-style: italic;
+            margin-bottom: 3rem;
+            text-align: center;
+            border-bottom: 1px double var(--border);
+            padding-bottom: 0.5rem;
+        }
+
+        nav ul { list-style: none; }
+        nav li {
+            margin-bottom: 1.5rem;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        nav li:hover { opacity: 0.7; }
+        nav li.active { border-left: 2px solid var(--accent); padding-left: 10px; margin-left: -12px; }
+
+        .topic-title {
+            display: block;
+            font-size: 1rem;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        .topic-meta {
+            font-size: 0.75rem;
+            font-style: italic;
+            color: var(--ink-faded);
+        }
+
+        /* Main Chat Area */
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 600px;
+            margin: 0 auto;
+            position: relative;
+            box-shadow: 0 0 50px var(--shadow);
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+            scrollbar-width: thin;
+        }
+
+        .message { margin-bottom: 3rem; position: relative; }
+        .message.human { text-align: right; margin-left: 20%; }
+        .message.ai { margin-right: 10%; }
+
+        .message-content { font-size: 1.1rem; }
+        .message.human .message-content { font-style: italic; color: var(--accent); }
+
+        /* Thinking Trace */
+        .thinking {
+            font-size: 0.85rem;
+            color: var(--ink-faded);
+            border-left: 1px solid var(--border);
+            padding-left: 1rem;
+            margin: 1rem 0;
+            font-style: italic;
+        }
+
+        /* Code Block */
+        pre {
+            background: oklch(from var(--paper) l c h / 0.5);
+            border: 1px solid var(--border);
+            padding: 1rem;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+            position: relative;
+        }
+        pre::before {
+            content: "TYPEWRITER OUTPUT";
+            display: block;
+            font-size: 0.6rem;
+            letter-spacing: 0.2em;
+            margin-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* Tool Call */
+        .tool-call {
+            border: 1px dashed var(--ink-faded);
+            padding: 0.5rem 1rem;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            display: inline-block;
+            margin: 1rem 0;
+        }
+
+        /* Composer */
+        .composer {
+            padding: 2rem;
+            border-top: 1px solid var(--border);
+            background: var(--paper);
+        }
+        .composer-inner {
+            position: relative;
+            border-bottom: 1px solid var(--ink);
+        }
+        textarea {
+            width: 100%;
+            border: none;
+            background: transparent;
+            font-family: var(--font-serif);
+            font-size: 1.1rem;
+            resize: none;
+            outline: none;
+            color: var(--ink);
+            padding-bottom: 0.5rem;
+        }
+        .actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+        button {
+            background: transparent;
+            border: 1px solid var(--ink);
+            padding: 0.3rem 1rem;
+            font-family: var(--font-serif);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover { background: var(--ink); color: var(--paper); }
+
+        /* Empty State */
+        .empty-state {
+            display: none; /* Toggle for preview */
+            height: 100%;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 4rem;
+        }
+        .empty-state h1 { font-family: var(--font-display); font-size: 3rem; font-weight: 200; margin-bottom: 1rem; }
+        .empty-state p { font-style: italic; max-width: 300px; color: var(--ink-faded); }
+
+        /* Mixed Content Support */
+        .lang-zh { font-family: serif; letter-spacing: 0; }
+    </style>
+</head>
+<body>
+    <aside>
+        <div class="logo">Agent Clip</div>
+        <nav>
+            <ul>
+                <li class="active">
+                    <span class="topic-title">Project Phoenix Analysis</span>
+                    <span class="topic-meta">March 11, 14:30</span>
+                </li>
+                <li>
+                    <span class="topic-title">Market Trends 2026</span>
+                    <span class="topic-meta">March 10, 09:12</span>
+                </li>
+                <li>
+                    <span class="topic-title lang-zh">量子计算基础 (Quantum)</span>
+                    <span class="topic-meta">March 09, 18:45</span>
+                </li>
+                <li>
+                    <span class="topic-title">internal/loop.go Refactor</span>
+                    <span class="topic-meta">March 08, 22:10</span>
+                </li>
+                <li>
+                    <span class="topic-title lang-zh">Kyoto 週末旅行計画</span>
+                    <span class="topic-meta">March 07, 11:00</span>
+                </li>
+                <li>
+                    <span class="topic-title">AI Design Systems</span>
+                    <span class="topic-meta">March 06, 15:20</span>
+                </li>
+            </ul>
+        </nav>
+    </aside>
+
+    <main>
+        <div class="messages">
+            <div class="message human">
+                <div class="message-content">
+                    Can you analyze the performance of this Python script and suggest improvements? 
+                    <span class="lang-zh">另外，请帮我检查一下代码中是否存在内存泄漏。</span>
+                </div>
+            </div>
+
+            <div class="message ai">
+                <div class="thinking">
+                    Analyzing the provided script structure. Identifying O(n²) complexity in data aggregation. 
+                    Checking memory overhead for large DataFrame objects...
+                </div>
+                <div class="message-content">
+                    Certainly. The primary bottleneck is the redundant computation within the primary loop. By utilizing vectorized operations, we can achieve significant speedups.
+                </div>
+                
+                <pre><code>import pandas as pd
+import numpy as np
+
+def optimized_process(data):
+    # Avoid explicit loops, use vectorization
+    df = pd.DataFrame(data)
+    df['result'] = df['val'] * np.exp(df['rate'])
+    return df.to_dict()</code></pre>
+
+                <div class="tool-call">
+                    INVOKING: run_profiler(target="script.py")
+                </div>
+
+                <div class="message-content">
+                    <span class="lang-zh">我已运行性能分析工具。结果显示，优化后的代码执行效率提升了约 45%，且内存占用保持稳定。</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="composer">
+            <div class="composer-inner">
+                <textarea placeholder="Write a message..."></textarea>
+            </div>
+            <div class="actions">
+                <span>Attach File / 附件</span>
+                <button>SEND / 发送</button>
+            </div>
+        </div>
+    </main>
+
+    <!-- For preview: hidden empty state -->
+    <div id="empty-preview" style="display:none; position:fixed; top:0; left:240px; right:0; bottom:0; background:var(--paper); z-index:100;">
+        <div class="empty-state" style="display:flex;">
+            <h1>Clip</h1>
+            <p>Select a scroll from the library or begin a new correspondence.</p>
+            <p class="lang-zh" style="margin-top:1rem;">选择一段对话，或开始新的探究。</p>
+        </div>
+    </div>
+</body>
+</html>

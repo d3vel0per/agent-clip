@@ -1,15 +1,12 @@
 import * as React from "react"
-import { Input as InputPrimitive } from "@base-ui/react/input"
-
 import { cn } from "@/lib/utils"
 
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
-    <InputPrimitive
+    <input
       type={type}
-      data-slot="input"
       className={cn(
-        "h-10 w-full min-w-0 rounded-xl border border-border/40 bg-card/50 px-4 py-2 text-[14px] font-medium transition-all outline-none placeholder:text-muted-foreground/30 focus:border-primary/40 focus:ring-4 focus:ring-primary/5 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-4 aria-invalid:ring-destructive/10 dark:bg-card/30",
+        "flex h-10 w-full border border-border bg-surface px-3 py-2 text-sm text-ink transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted/50 placeholder:italic focus-visible:outline-none focus-visible:border-ink disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       {...props}
