@@ -49,6 +49,9 @@ func OpenDB() (*sql.DB, error) {
 		"ALTER TABLE messages ADD COLUMN reasoning TEXT",
 		"ALTER TABLE summaries ADD COLUMN run_id TEXT",
 		"ALTER TABLE summaries ADD COLUMN embedding_model TEXT",
+		"ALTER TABLE events ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Local'",
+		"ALTER TABLE events ADD COLUMN last_run_at INTEGER",
+		"ALTER TABLE events ADD COLUMN canceled_at INTEGER",
 	} {
 		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
 			_ = db.Close()

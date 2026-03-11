@@ -22,6 +22,7 @@ func buildRegistry(db *sql.DB, cfg *internal.Config) *internal.Registry {
 	internal.RegisterBrowserCommands(registry, cfg)
 	internal.RegisterMemoryCommands(registry, db, cfg)
 	internal.RegisterTopicCommands(registry, db, cfg)
+	internal.RegisterEventCommands(registry, db)
 	internal.RegisterSkillCommands(registry, cfg)
 	internal.RegisterConfigCommands(registry)
 	return registry

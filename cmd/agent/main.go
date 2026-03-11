@@ -27,6 +27,7 @@ func main() {
 	root.AddCommand(uploadCmd())
 	root.AddCommand(workerCmd())
 	root.AddCommand(memoryWorkerCmd())
+	root.AddCommand(eventCheckCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

@@ -64,3 +64,20 @@ CREATE TABLE IF NOT EXISTS facts (
     category   TEXT NOT NULL DEFAULT 'general',
     created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS events (
+    id               TEXT PRIMARY KEY,
+    topic_id         TEXT NOT NULL REFERENCES topics(id),
+    prompt           TEXT NOT NULL,
+    schedule_kind    TEXT NOT NULL,
+    schedule_value   TEXT NOT NULL,
+    timezone         TEXT NOT NULL DEFAULT 'Local',
+    next_run_at      INTEGER NOT NULL,
+    last_run_at      INTEGER,
+    status           TEXT NOT NULL DEFAULT 'scheduled',
+    created_at       INTEGER NOT NULL,
+    canceled_at      INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_due ON events(status, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_events_topic_status ON events(topic_id, status);
