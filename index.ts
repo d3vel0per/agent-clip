@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { readFileSync } from "node:fs";
-import { Clip, command, handler, serveIPC, z } from "@pinixai/core";
+import { Clip, command, handler, serveIPC, type Stream, z } from "@pinixai/core";
 import { ensureConfigExists, configAddClip, configDelete, configRemoveClip, configSet, configToJSON, loadConfig, parseClipInput } from "./src/config";
 import { buildContext } from "./src/context";
 import {
@@ -113,7 +113,7 @@ class AgentClip extends Clip {
   dependencies = dependencyNames;
 
   @command("发送消息并执行 agentic loop")
-  send = handler(InvocationSchema, AnyOutputSchema, async (input) => await this.executeCommand("send", input));
+  send = handler(InvocationSchema, AnyOutputSchema, async (input, stream) => await this.runSend(input, stream));
 
   @command("创建新话题")
   ["create-topic"] = handler(InvocationSchema, AnyOutputSchema, async (input) => await this.executeCommand("create-topic", input));
@@ -365,9 +365,12 @@ class AgentClip extends Clip {
     out.result({ due: due.length, triggered, skipped });
   }
 
-  private async runSend(input: InvocationInput): Promise<unknown> {
+  private async runSend(input: InvocationInput, stream?: Stream): Promise<unknown> {
     const lines: string[] = [];
-    const out = createJSONLChunkOutput((chunk) => lines.push(chunk));
+    const out = createJSONLChunkOutput((chunk) => {
+      lines.push(chunk);
+      stream?.chunk(chunk);
+    });
     const exitCode = await this.handleSend(input, out);
     if (exitCode !== 0) {
       throw new Error(extractSendError(lines, exitCode));
