@@ -95,6 +95,12 @@ interface AnthropicBlockState {
   args: string;
 }
 
+interface AnthropicImageSource {
+  type: "base64";
+  media_type: string;
+  data: string;
+}
+
 export function textMessage(role: string, content: string): Message {
   return { role, content };
 }
@@ -269,7 +275,7 @@ function convertMessagesForAnthropic(messages: Message[]): { system: string; mes
     }
 
     if (message.role === "user") {
-      const block = [{ type: "text", text: message.content ?? "" }];
+      const block = buildAnthropicContentBlocks(message);
       const last = result.at(-1);
       if (last?.role === "user" && Array.isArray(last.content)) {
         (last.content as unknown[]).push(...block);
@@ -310,10 +316,11 @@ function convertMessagesForAnthropic(messages: Message[]): { system: string; mes
     if (message.role === "tool") {
       const blocks: unknown[] = [];
       while (index < messages.length && messages[index].role === "tool") {
+        const toolMessage = messages[index];
         blocks.push({
           type: "tool_result",
-          tool_use_id: messages[index].toolCallId,
-          content: messages[index].content ?? "",
+          tool_use_id: toolMessage.toolCallId,
+          content: buildAnthropicContentBlocks(toolMessage),
         });
         index += 1;
       }
@@ -330,6 +337,24 @@ function convertMessagesForAnthropic(messages: Message[]): { system: string; mes
   }
 
   return { system, messages: result };
+}
+
+function buildAnthropicContentBlocks(message: Message): unknown[] {
+  const blocks: unknown[] = [];
+  if (message.content) {
+    blocks.push({ type: "text", text: message.content });
+  }
+  for (const image of message.images ?? []) {
+    blocks.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: image.mimeType,
+        data: image.base64,
+      } satisfies AnthropicImageSource,
+    });
+  }
+  return blocks.length > 0 ? blocks : [{ type: "text", text: "" }];
 }
 
 async function callAnthropic(

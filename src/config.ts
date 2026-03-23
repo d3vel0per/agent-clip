@@ -191,6 +191,10 @@ export function configSet(dotPath: string, value: string): void {
 
 export function configDelete(dotPath: string): void {
   ensureConfigExists();
+  if (!dotPath.trim()) {
+    resetConfig();
+    return;
+  }
   const doc = parseDocument(readFileSync(configPath(), "utf8"));
   deletePath(doc, dotPath);
   saveDocument(doc);
@@ -291,6 +295,14 @@ function asOptionalString(value: unknown): string | undefined {
 
 function saveDocument(doc: ReturnType<typeof parseDocument>): void {
   writeFileSync(configPath(), doc.toString(), "utf8");
+}
+
+function resetConfig(): void {
+  const seedConfig = seedRoot("config.yaml");
+  if (!existsSync(seedConfig)) {
+    throw new Error(`missing config file at ${configPath()}`);
+  }
+  copyFileSync(seedConfig, configPath());
 }
 
 function ensureRootMap(doc: ReturnType<typeof parseDocument>): YAMLMap<unknown, unknown> {

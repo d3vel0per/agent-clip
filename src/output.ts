@@ -1,4 +1,4 @@
-import { createWriteStream, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import type { Writable } from "node:stream";
 import { dirname } from "node:path";
 import { runOutputPath } from "./paths";
@@ -13,10 +13,12 @@ export interface Output {
   toolResult(content: string): void;
   inject(content: string): void;
   done(): void;
+  close(): void;
 }
 
 interface Writer {
   write(chunk: string): void;
+  close(): void;
 }
 
 class StreamWriter implements Writer {
@@ -25,10 +27,13 @@ class StreamWriter implements Writer {
   write(chunk: string): void {
     this.stream.write(chunk);
   }
+
+  close(): void {}
 }
 
 class SyncFileWriter implements Writer {
   private readonly fd: number;
+  private closed = false;
 
   constructor(path: string) {
     mkdirSync(dirname(path), { recursive: true });
@@ -37,6 +42,14 @@ class SyncFileWriter implements Writer {
 
   write(chunk: string): void {
     writeSync(this.fd, chunk);
+  }
+
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    closeSync(this.fd);
+    this.closed = true;
   }
 }
 
@@ -73,6 +86,11 @@ class CLIOutput implements Output {
 
   done(): void {
     this.stdout.write("\n");
+  }
+
+  close(): void {
+    this.stdout.close();
+    this.stderr.close();
   }
 }
 
@@ -114,6 +132,10 @@ class JSONLOutput implements Output {
   done(): void {
     this.emit({ type: "done" });
   }
+
+  close(): void {
+    this.writer.close();
+  }
 }
 
 export function createCLIOutput(): Output {
@@ -125,7 +147,7 @@ export function createJSONLOutput(): Output {
 }
 
 export function createJSONLChunkOutput(onChunk: (chunk: string) => void): Output {
-  return new JSONLOutput({ write: onChunk });
+  return new JSONLOutput({ write: onChunk, close() {} });
 }
 
 export function createAsyncFileOutput(runId: string): Output {

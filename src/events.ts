@@ -24,6 +24,7 @@ export interface Event {
 }
 
 export interface DueEvent extends Event {
+  fired_at: number;
   run_message: string;
 }
 
@@ -138,8 +139,37 @@ export function updateEvent(
   eventId: string,
   updates: Record<string, string>,
 ): Event {
+  const currentRow = db.query<{
+    id: string;
+    topic_id: string;
+    prompt: string;
+    schedule_kind: string;
+    schedule_value: string;
+    timezone: string;
+    next_run_at: number;
+    last_run_at: number | null;
+    status: string;
+    created_at: number;
+    canceled_at: number | null;
+  }, [string]>(
+    `SELECT id, topic_id, prompt, schedule_kind, schedule_value, timezone, next_run_at,
+      last_run_at, status, created_at, canceled_at
+     FROM events WHERE id = ?`,
+  ).get(eventId);
+
+  if (!currentRow) {
+    throw new Error(`event ${eventId} not found`);
+  }
+
+  const current = toEvent(currentRow);
+  if (current.status !== EventStatusScheduled) {
+    throw new Error(`event ${eventId} not found or not scheduled`);
+  }
+
   const sets: string[] = [];
-  const values: string[] = [];
+  const values: Array<string | number> = [];
+  let nextTimezone = current.timezone;
+  let timezoneChanged = false;
 
   for (const [key, value] of Object.entries(updates)) {
     switch (key) {
@@ -152,12 +182,20 @@ export function updateEvent(
         values.push(value);
         break;
       case "tz":
+        nextTimezone = resolveTimeZone(value);
+        timezoneChanged = true;
         sets.push("timezone = ?");
-        values.push(resolveTimeZone(value));
+        values.push(nextTimezone);
         break;
       default:
         throw new Error(`unsupported update field: ${key}`);
     }
+  }
+
+  if (timezoneChanged) {
+    const { nextRunAt } = computeInitialNextRun(current.schedule_kind, current.schedule_value, nextTimezone);
+    sets.push("next_run_at = ?");
+    values.push(nextRunAt);
   }
 
   if (sets.length === 0) {
@@ -209,10 +247,45 @@ export function cancelEvent(db: Database, eventId: string): void {
 }
 
 export function claimDueEvents(db: Database, limit = 10): DueEvent[] {
+  const maxItems = limit > 0 ? limit : 10;
+  const firedAt = nowUnix();
+  const rows = db.query<{
+    id: string;
+    topic_id: string;
+    prompt: string;
+    schedule_kind: string;
+    schedule_value: string;
+    timezone: string;
+    next_run_at: number;
+    last_run_at: number | null;
+    status: string;
+    created_at: number;
+    canceled_at: number | null;
+  }, [string, number, number]>(
+    `SELECT id, topic_id, prompt, schedule_kind, schedule_value, timezone, next_run_at,
+       last_run_at, status, created_at, canceled_at
+     FROM events
+     WHERE status = ? AND next_run_at <= ?
+     ORDER BY next_run_at ASC, created_at ASC
+     LIMIT ?`,
+  ).all(EventStatusScheduled, firedAt, maxItems);
+
+  const due = rows.map((row) => {
+    const event = toEvent(row);
+    return {
+      ...event,
+      fired_at: firedAt,
+      run_message: formatEventMessage(event, firedAt),
+    } satisfies DueEvent;
+  });
+
+  due.sort((left, right) => left.next_run_at - right.next_run_at);
+  return due;
+}
+
+export function advanceDueEvent(db: Database, eventId: string, firedAt: number): boolean {
   return transaction(db, () => {
-    const maxItems = limit > 0 ? limit : 10;
-    const firedAt = nowUnix();
-    const rows = db.query<{
+    const row = db.query<{
       id: string;
       topic_id: string;
       prompt: string;
@@ -224,32 +297,29 @@ export function claimDueEvents(db: Database, limit = 10): DueEvent[] {
       status: string;
       created_at: number;
       canceled_at: number | null;
-    }, [string, number, number]>(
+    }, [string]>(
       `SELECT id, topic_id, prompt, schedule_kind, schedule_value, timezone, next_run_at,
-         last_run_at, status, created_at, canceled_at
-       FROM events
-       WHERE status = ? AND next_run_at <= ?
-       ORDER BY next_run_at ASC, created_at ASC
-       LIMIT ?`,
-    ).all(EventStatusScheduled, firedAt, maxItems);
+        last_run_at, status, created_at, canceled_at
+       FROM events WHERE id = ?`,
+    ).get(eventId);
 
-    const update = db.query(
-      "UPDATE events SET last_run_at = ?, next_run_at = ?, status = ? WHERE id = ? AND status = ?",
-    );
-
-    const due: DueEvent[] = [];
-    for (const row of rows) {
-      const event = toEvent(row);
-      const { nextRunAt, nextStatus } = advanceEventSchedule(event, firedAt);
-      update.run(firedAt, nextRunAt, nextStatus, event.id, EventStatusScheduled);
-      due.push({
-        ...event,
-        run_message: formatEventMessage(event, firedAt),
-      });
+    if (!row) {
+      return false;
     }
 
-    due.sort((left, right) => left.next_run_at - right.next_run_at);
-    return due;
+    const event = toEvent(row);
+    if (event.status !== EventStatusScheduled || event.next_run_at > firedAt) {
+      return false;
+    }
+
+    const { nextRunAt, nextStatus } = advanceEventSchedule(event, firedAt);
+    const result = db.query(
+      `UPDATE events
+       SET last_run_at = ?, next_run_at = ?, status = ?
+       WHERE id = ? AND status = ? AND next_run_at = ?`,
+    ).run(firedAt, nextRunAt, nextStatus, event.id, EventStatusScheduled, event.next_run_at);
+
+    return result.changes > 0;
   });
 }
 

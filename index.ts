@@ -21,7 +21,7 @@ import {
   saveMessages,
   type Run,
 } from "./src/db";
-import { claimDueEvents } from "./src/events";
+import { advanceDueEvent, claimDueEvents } from "./src/events";
 import { ensureTopicDir, setCurrentTopic, withCurrentTopic } from "./src/fs";
 import { runLoop } from "./src/loop";
 import { processMemory } from "./src/memory";
@@ -344,13 +344,20 @@ class AgentClip extends Clip {
     let skipped = 0;
 
     for (const event of due) {
-      if (activeTopics[event.topic_id]) {
+      if (activeTopics[event.topic_id] || getActiveRun(db, event.topic_id)) {
         skipped += 1;
         out.info(`skipped ${event.id}: topic ${event.topic_id} already running`);
         continue;
       }
 
       const run = createRun(db, event.topic_id, process.pid, true);
+      if (!advanceDueEvent(db, event.id, event.fired_at)) {
+        finishRun(db, run.id, "cancelled");
+        skipped += 1;
+        out.info(`skipped ${event.id}: event no longer due`);
+        continue;
+      }
+
       this.startBackgroundRun({
         runId: run.id,
         topicId: event.topic_id,
@@ -490,6 +497,7 @@ class AgentClip extends Clip {
       unregisterRunController(execution.runId);
       process.off("SIGTERM", signalHandler);
       process.off("SIGINT", signalHandler);
+      out.close();
     }
   }
 
@@ -602,11 +610,12 @@ class AgentClip extends Clip {
         return `${key} = ${value}`;
       }
       case "delete": {
-        if (!args[1]) {
+        if (args.length < 2) {
           throw new Error("usage: config delete <dot.path>");
         }
-        configDelete(args[1]);
-        return `deleted ${args[1]}`;
+        const key = args[1] ?? "";
+        configDelete(key);
+        return key ? `deleted ${key}` : "config reset";
       }
       case "add-clip": {
         const raw = args.slice(1).join(" ") || readStdin(input);

@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import type { ImageData } from "./media";
 import { imageDataFromBytes, isImageFile, safeFilename } from "./media";
 import { topicDir } from "./paths";
@@ -29,7 +29,7 @@ export function uploadFile(input: UploadInput): UploadResult {
   }
 
   const bytes = Buffer.from(input.data, "base64");
-  const filename = safeFilename(input.name);
+  const filename = uniqueUploadName(safeFilename(input.name));
   const path = join(topicDir(input.topic_id), filename);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, bytes);
@@ -38,6 +38,12 @@ export function uploadFile(input: UploadInput): UploadResult {
     path: filename,
     size: bytes.byteLength,
   };
+}
+
+function uniqueUploadName(name: string): string {
+  const ext = extname(name);
+  const base = ext ? name.slice(0, -ext.length) : name;
+  return `${base}-${Date.now()}${ext}`;
 }
 
 export function appendAttachments(message: string, attachments: string[]): string {
