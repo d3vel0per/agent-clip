@@ -713,11 +713,58 @@ function registerClipCommands(register: RegisterFn, cfg: Config): void {
 
 async function clipInvoke(clipName: string, command: string, args: string[], stdin: string): Promise<string> {
   const input = buildClipInvokeInput(args, stdin);
-  const result = await invoke(clipName, command, input);
-  if (typeof result === 'string') {
-    return result;
+
+  // If there are bare positional args (no --flags), the input is likely wrong.
+  // Show usage hint from the command's schema.
+  const hasFlags = args.some((a) => a.startsWith('--'));
+  const hasPositionals = args.some((a) => !a.startsWith('--'));
+  if (hasPositionals && !hasFlags && !stdin.trim()) {
+    const hint = await getCommandUsageHint(clipName, command);
+    if (hint) {
+      throw new Error(`${hint}\n\nExample: clip ${clipName} ${command} ${hint.includes('--') ? hint.split('\n')[0].replace(/^usage: clip \S+ \S+ /, '') : ''}`);
+    }
   }
-  return JSON.stringify(result, null, 2);
+
+  try {
+    const result = await invoke(clipName, command, input);
+    if (typeof result === 'string') {
+      return result;
+    }
+    return JSON.stringify(result, null, 2);
+  } catch (error) {
+    const hint = await getCommandUsageHint(clipName, command);
+    if (hint) {
+      throw new Error(`${toErrorMessage(error)}\n\n${hint}`);
+    }
+    throw error;
+  }
+}
+
+async function getCommandUsageHint(clipName: string, command: string): Promise<string | null> {
+  try {
+    const clips = await hubListClips();
+    const clip = clips.find((c) => c.name === clipName);
+    const cmd = clip?.commands.find((c) => c.name === command);
+    if (!cmd?.input) return null;
+
+    const schema = safeJSONParse<{ properties?: Record<string, { type?: string; description?: string; enum?: string[] }>; required?: string[] }>(cmd.input);
+    if (!schema?.properties) return null;
+
+    const parts: string[] = [];
+    const required = new Set(schema.required ?? []);
+    for (const [key, prop] of Object.entries(schema.properties)) {
+      const desc = prop.description ? ` (${prop.description})` : '';
+      const enumVals = prop.enum ? ` [${prop.enum.join('|')}]` : '';
+      if (required.has(key)) {
+        parts.push(`--${key} <${prop.type || 'value'}>${enumVals}${desc}`);
+      } else {
+        parts.push(`[--${key} <${prop.type || 'value'}>${enumVals}${desc}]`);
+      }
+    }
+    return `usage: clip ${clipName} ${command} ${parts.join(' ')}`;
+  } catch {
+    return null;
+  }
 }
 
 async function clipPull(clipName: string, args: string[]): Promise<string> {
