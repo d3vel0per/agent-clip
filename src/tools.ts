@@ -835,9 +835,20 @@ async function clipInfo(clipName: string): Promise<string> {
     if (info.commands.length > 0) {
       lines.push('', 'Commands:');
       for (const cmd of info.commands) {
-        lines.push(`  clip ${clipName} ${cmd.name}${cmd.description ? ` — ${cmd.description}` : ''}`);
+        lines.push(`  ${cmd.name}${cmd.description ? ` — ${cmd.description}` : ''}`);
+        const schema = cmd.input ? safeJSONParse<{ properties?: Record<string, { type?: string; description?: string; enum?: string[] }>; required?: string[] }>(cmd.input) : null;
+        if (schema?.properties) {
+          const required = new Set(schema.required ?? []);
+          for (const [key, prop] of Object.entries(schema.properties)) {
+            const req = required.has(key) ? ' (required)' : '';
+            const enumVals = prop.enum ? ` [${prop.enum.join('|')}]` : '';
+            lines.push(`    --${key} <${prop.type || 'value'}>${enumVals}${req}${prop.description ? ` ${prop.description}` : ''}`);
+          }
+        }
       }
     }
+  } else {
+    lines.push('(not found on Hub)');
   }
 
   lines.push('', 'File transfer:');

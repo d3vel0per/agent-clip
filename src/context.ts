@@ -55,11 +55,11 @@ user 消息包含 XML 标签：
 
 ## 外部环境 (Clips)
 
-通过 \
-\`clip <name> <command>\` 操作外部沙箱、服务器等环境。
-- \`clip <name>\` — 查看环境详情和所有可用命令
+通过 \`clip <name> <command> --param value\` 操作外部服务。
+- \`clip <name>\` — 查看可用命令和参数（**首次使用必须先查**）
+- 参数必须用 \`--key value\` 格式，不要用裸位置参数
 - \`clip <name> pull <remote>\` / \`clip <name> push <local> <remote>\` — 文件传输
-首次使用某环境时，先运行 \`clip <name>\` 了解能力边界。
+**重要：调用任何 clip 命令前，先 \`clip <name>\` 看参数。不要猜参数格式。**
 
 ## Skills (经验库)
 
