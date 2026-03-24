@@ -1,8 +1,7 @@
-import { invoke } from '@pinixai/core';
+import { invoke, hubListClips } from '@pinixai/core';
 import { Database } from 'bun:sqlite';
 import { parseChain, Operator } from './chain';
 import {
-  type ClipConfig,
   type Config,
   configAddClip,
   configDelete,
@@ -10,7 +9,6 @@ import {
   configSet,
   configToText,
   loadConfig,
-  parseClipInput,
 } from './config';
 import {
   countTopicRuns,
@@ -297,7 +295,7 @@ export function runToolDef(commands: Record<string, string>): ToolDef {
 export function buildRegistry(db: Database, cfg: Config): Registry {
   const registry = new Registry();
   registerFSCommands(registry.register.bind(registry));
-  registerBrowserCommands(registry.register.bind(registry), cfg);
+  registerBrowserCommands(registry.register.bind(registry));
   registerMemoryCommands(registry.register.bind(registry), db, cfg);
   registerTopicCommands(registry.register.bind(registry), db, cfg);
   registerEventCommands(registry.register.bind(registry), db);
@@ -629,7 +627,7 @@ function registerConfigCommands(register: RegisterFn): void {
       '  config                                    — show current config',
       '  config set <key> <value>                  — set a value (supports dot-path: providers.openrouter.api_key)',
       '  config delete <key>                       — delete a key (e.g., providers.minimax)',
-      '  config add-clip <json>                    — add clip: {"name":"x","url":"...","token":"...","commands":["bash"]}',
+      '  config add-clip <name>                    — add a clip by name',
       '  config remove-clip <name>                 — remove a clip',
     ].join('\n'),
     async (args, stdin) => {
@@ -655,13 +653,12 @@ function registerConfigCommands(register: RegisterFn): void {
           return `deleted ${args[1]}`;
         }
         case 'add-clip': {
-          const raw = args.slice(1).join(' ') || stdin;
-          const clip = parseClipInput(raw);
-          if (!clip.name || !clip.url) {
-            throw new Error('clip requires name and url');
+          const clipName = args[1];
+          if (!clipName) {
+            throw new Error('usage: config add-clip <name>');
           }
-          configAddClip(clip);
-          return `added clip ${clip.name}`;
+          configAddClip(clipName);
+          return `added clip ${clipName}`;
         }
         case 'remove-clip': {
           if (!args[1]) {
@@ -678,110 +675,127 @@ function registerConfigCommands(register: RegisterFn): void {
 }
 
 function registerClipCommands(register: RegisterFn, cfg: Config): void {
+  const clipNames = new Set(cfg.clips.map((c) => c.name));
+
   register(
     'clip',
     [
-      'Operate external environments (sandboxes, services).',
-      '  clip list                              — list available clips',
-      '  clip <name>                            — show clip details and commands',
+      'Operate external clips (services, tools, environments).',
+      '  clip list                              — list configured clips (with commands from Hub)',
       '  clip <name> <command> [args...]        — invoke a command',
       '  clip <name> pull <remote-path> [name]  — pull file from clip to local',
       '  clip <name> push <local-path> <remote> — push local file to clip',
     ].join('\n'),
     async (args, stdin) => {
       if (args.length === 0 || (args.length === 1 && args[0] === 'list')) {
-        return clipList(cfg);
+        return clipList(clipNames);
       }
 
-      const clip = cfg.clips.find((item) => item.name === args[0]);
-      if (!clip) {
-        throw new Error(`clip ${JSON.stringify(args[0])} not found. Use 'clip list' to see available clips`);
-      }
-
-      if (args.length === 1) {
-        return clipInfo(clip);
+      const name = args[0];
+      if (!clipNames.has(name)) {
+        throw new Error(`clip ${JSON.stringify(name)} not configured. Use 'clip list' to see available clips`);
       }
 
       const command = args[1];
+      if (!command) {
+        return clipInfo(name);
+      }
       if (command === 'pull') {
-        return clipPull(clip, args.slice(2));
+        return clipPull(name, args.slice(2));
       }
       if (command === 'push') {
-        return clipPush(clip, args.slice(2));
+        return clipPush(name, args.slice(2));
       }
-      return invokeConfiguredClip(clip, command, args.slice(2), stdin);
+      return clipInvoke(name, command, args.slice(2), stdin);
     },
   );
 }
 
-async function invokeConfiguredClip(clip: ClipConfig, command: string, args: string[], stdin: string): Promise<string> {
+async function clipInvoke(clipName: string, command: string, args: string[], stdin: string): Promise<string> {
   const input = buildClipInvokeInput(args, stdin);
-  const result = await invoke(clip.name, command, input);
+  const result = await invoke(clipName, command, input);
   if (typeof result === 'string') {
     return result;
   }
   return JSON.stringify(result, null, 2);
 }
 
-async function clipPull(clip: ClipConfig, args: string[]): Promise<string> {
+async function clipPull(clipName: string, args: string[]): Promise<string> {
   if (!args[0]) {
-    throw new Error(`usage: clip ${clip.name} pull <remote-path> [local-name]`);
+    throw new Error(`usage: clip ${clipName} pull <remote-path> [local-name]`);
   }
 
   const remotePath = args[0];
   const localName = args[1] ?? remotePath.split('/').pop() ?? remotePath;
-  const result = await invoke(clip.name, 'read', { args: [remotePath], stdin: '' });
+  const result = await invoke(clipName, 'read', { args: [remotePath], stdin: '' });
   const data = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
   await Bun.write(resolvePath(localName), data);
 
-  let output = `Pulled ${clip.name}:${remotePath} -> ${localName} (${humanSize(Buffer.byteLength(data))})`;
+  let output = `Pulled ${clipName}:${remotePath} -> ${localName} (${humanSize(Buffer.byteLength(data))})`;
   if (isImageFile(localName)) {
     output += `\nRender: ![image](${pinixDataURLPrefix}${resolvePathToRelative(localName)})`;
   }
   return output;
 }
 
-async function clipPush(clip: ClipConfig, args: string[]): Promise<string> {
+async function clipPush(clipName: string, args: string[]): Promise<string> {
   if (!args[0] || !args[1]) {
-    throw new Error(`usage: clip ${clip.name} push <local-path> <remote-path>`);
+    throw new Error(`usage: clip ${clipName} push <local-path> <remote-path>`);
   }
 
   const bytes = await Bun.file(resolvePath(args[0])).bytes();
   const base64 = Buffer.from(bytes).toString('base64');
-  await invoke(clip.name, 'write', { args: ['-b', args[1]], stdin: base64 });
-  return `Pushed ${args[0]} -> ${clip.name}:${args[1]} (${humanSize(bytes.byteLength)})`;
+  await invoke(clipName, 'write', { args: ['-b', args[1]], stdin: base64 });
+  return `Pushed ${args[0]} -> ${clipName}:${args[1]} (${humanSize(bytes.byteLength)})`;
 }
 
-function clipList(cfg: Config): string {
-  if (cfg.clips.length === 0) {
-    return 'No clips configured.';
+async function clipList(configured: Set<string>): Promise<string> {
+  if (configured.size === 0) {
+    return 'No clips configured. Use `config add-clip <name>` to add one.';
   }
 
-  return cfg.clips.map((clip) => {
-    if (clip.commands.length > 0) {
-      return `  ${clip.name} — commands: ${clip.commands.join(', ')}`;
+  let hubClips: Awaited<ReturnType<typeof hubListClips>> = [];
+  try {
+    hubClips = await hubListClips();
+  } catch {
+    return [...configured].map((name) => `  ${name}`).join('\n');
+  }
+
+  const lines: string[] = [];
+  for (const name of configured) {
+    const info = hubClips.find((c) => c.name === name);
+    if (info) {
+      const cmds = info.commands.map((c) => c.name).join(', ');
+      lines.push(`  ${name}${cmds ? ` — ${cmds}` : ''}`);
+    } else {
+      lines.push(`  ${name} (not found on Hub)`);
     }
-    return `  ${clip.name}`;
-  }).join('\n');
+  }
+  return lines.join('\n');
 }
 
-function clipInfo(clip: ClipConfig): string {
-  const lines = [`Clip: ${clip.name}`];
-  if (clip.manifest?.description) {
-    lines.push(`Description: ${clip.manifest.description}`);
-  }
+async function clipInfo(clipName: string): Promise<string> {
+  let hubClips: Awaited<ReturnType<typeof hubListClips>> = [];
+  try {
+    hubClips = await hubListClips();
+  } catch {}
 
-  const commands = clip.manifest?.commands?.length ? clip.manifest.commands : clip.commands;
-  if (commands.length > 0) {
-    lines.push('', 'Commands:');
-    for (const command of commands) {
-      lines.push(`  clip ${clip.name} ${command}`);
+  const info = hubClips.find((c) => c.name === clipName);
+  const lines = [`Clip: ${clipName}`];
+
+  if (info) {
+    if (info.domain) lines.push(`Domain: ${info.domain}`);
+    if (info.commands.length > 0) {
+      lines.push('', 'Commands:');
+      for (const cmd of info.commands) {
+        lines.push(`  clip ${clipName} ${cmd.name}${cmd.description ? ` — ${cmd.description}` : ''}`);
+      }
     }
   }
 
   lines.push('', 'File transfer:');
-  lines.push(`  clip ${clip.name} pull <remote-path> [local-name]`);
-  lines.push(`  clip ${clip.name} push <local-path> <remote-path>`);
+  lines.push(`  clip ${clipName} pull <remote-path> [local-name]`);
+  lines.push(`  clip ${clipName} push <local-path> <remote-path>`);
   return lines.join('\n');
 }
 

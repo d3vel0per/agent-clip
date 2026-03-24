@@ -9,23 +9,8 @@ export interface ProviderConfig {
   api_key: string;
 }
 
-export interface ClipManifest {
-  name?: string;
-  description?: string;
-  commands?: string[];
-  hasWeb?: boolean;
-}
-
 export interface ClipConfig {
   name: string;
-  url: string;
-  token: string;
-  commands: string[];
-  manifest?: ClipManifest;
-}
-
-export interface BrowserConfig {
-  endpoint: string;
 }
 
 export interface Config {
@@ -37,20 +22,12 @@ export interface Config {
   embedding_model: string;
   system_prompt: string;
   clips: ClipConfig[];
-  browser?: BrowserConfig;
 }
 
 export interface ProviderJSON {
   protocol?: string;
   base_url: string;
   api_key: string;
-}
-
-export interface ClipJSON {
-  name: string;
-  url: string;
-  token: string;
-  commands: string[];
 }
 
 export interface ConfigJSON {
@@ -61,15 +38,7 @@ export interface ConfigJSON {
   embedding_provider: string;
   embedding_model: string;
   system_prompt: string;
-  clips: ClipJSON[];
-  browser?: BrowserConfig;
-}
-
-export interface ClipInput {
-  name: string;
-  url: string;
-  token: string;
-  commands?: string[];
+  clips: string[];
 }
 
 export function ensureConfigExists(): void {
@@ -99,7 +68,6 @@ export function loadConfig(): Config {
     embedding_model: asString(parsed?.embedding_model),
     system_prompt: asString(parsed?.system_prompt),
     clips: normalizeClips(parsed?.clips),
-    browser: normalizeBrowser(parsed?.browser),
   };
 
   const openrouterKey = process.env.OPENROUTER_API_KEY;
@@ -151,13 +119,7 @@ export function configToJSON(cfg: Config): ConfigJSON {
     embedding_provider: cfg.embedding_provider,
     embedding_model: cfg.embedding_model,
     system_prompt: cfg.system_prompt,
-    clips: cfg.clips.map((clip) => ({
-      name: clip.name,
-      url: clip.url,
-      token: maskSecret(clip.token),
-      commands: [...clip.commands],
-    })),
-    browser: cfg.browser,
+    clips: cfg.clips.map((clip) => clip.name),
   };
 }
 
@@ -171,12 +133,8 @@ export function configToText(cfg: Config): string {
     `providers: ${Object.keys(cfg.providers).join(", ")}`,
   ];
 
-  if (cfg.browser?.endpoint) {
-    lines.push(`browser: ${cfg.browser.endpoint}`);
-  }
-
-  for (const clip of cfg.clips) {
-    lines.push(`clip: ${clip.name} (${clip.commands.join(", ")})`);
+  if (cfg.clips.length > 0) {
+    lines.push(`clips: ${cfg.clips.map((c) => c.name).join(", ")}`);
   }
 
   return lines.join("\n");
@@ -200,29 +158,16 @@ export function configDelete(dotPath: string): void {
   saveDocument(doc);
 }
 
-export function parseClipInput(jsonString: string): ClipConfig {
-  const input = JSON.parse(jsonString) as ClipInput;
-  return {
-    name: input.name ?? "",
-    url: input.url ?? "",
-    token: input.token ?? "",
-    commands: Array.isArray(input.commands)
-      ? input.commands.filter((command): command is string => typeof command === "string")
-      : [],
-  };
-}
-
-export function configAddClip(clip: ClipConfig): void {
-  const cfg = loadConfig();
-  if (cfg.clips.some((item) => item.name === clip.name)) {
-    throw new Error(`clip ${JSON.stringify(clip.name)} already exists`);
+export function configAddClip(name: string): void {
+  name = name.trim();
+  if (!name) {
+    throw new Error("clip name is required");
   }
-  cfg.clips.push({
-    name: clip.name,
-    url: clip.url,
-    token: clip.token,
-    commands: [...clip.commands],
-  });
+  const cfg = loadConfig();
+  if (cfg.clips.some((item) => item.name === name)) {
+    throw new Error(`clip ${JSON.stringify(name)} already exists`);
+  }
+  cfg.clips.push({ name });
   saveConfig(cfg);
 }
 
@@ -262,28 +207,16 @@ function normalizeClips(value: unknown): ClipConfig[] {
   }
 
   return value
-    .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
-    .map((clip) => ({
-      name: asString(clip.name),
-      url: asString(clip.url),
-      token: asString(clip.token),
-      commands: Array.isArray(clip.commands)
-        ? clip.commands.filter((command): command is string => typeof command === "string")
-        : [],
-    }));
+    .map((item) => {
+      if (typeof item === "string") return { name: item };
+      if (item && typeof item === "object" && typeof (item as Record<string, unknown>).name === "string") {
+        return { name: (item as Record<string, unknown>).name as string };
+      }
+      return null;
+    })
+    .filter((item): item is ClipConfig => item !== null && item.name !== "");
 }
 
-function normalizeBrowser(value: unknown): BrowserConfig | undefined {
-  if (!value || typeof value !== "object") {
-    return undefined;
-  }
-  const browser = value as Record<string, unknown>;
-  const endpoint = asString(browser.endpoint);
-  if (!endpoint) {
-    return undefined;
-  }
-  return { endpoint };
-}
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
@@ -376,17 +309,8 @@ function saveConfig(cfg: Config): void {
     embedding_provider: cfg.embedding_provider,
     embedding_model: cfg.embedding_model,
     system_prompt: cfg.system_prompt,
-    clips: cfg.clips.map((clip) => ({
-      name: clip.name,
-      url: clip.url,
-      token: clip.token,
-      commands: clip.commands,
-    })),
+    clips: cfg.clips.map((clip) => clip.name),
   };
-
-  if (cfg.browser) {
-    serialized.browser = cfg.browser;
-  }
 
   doc.contents = doc.createNode(serialized) as typeof doc.contents;
   saveDocument(doc);

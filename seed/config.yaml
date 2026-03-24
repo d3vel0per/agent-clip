@@ -24,4 +24,5 @@ system_prompt: |
 
   简洁直接，中文回复。
 
-clips: []
+clips:
+  - twitter

@@ -1,9 +1,33 @@
+import { hubListClips } from "@pinixai/core";
 import { Database } from "bun:sqlite";
 import type { Config } from "./config";
 import { getCompletedRuns, loadMessagesByRunID } from "./db";
 import { listSkills } from "./skills";
 import { searchMemorySemantic, listFacts, getEmbedding } from "./memory";
 import { textMessage, type Message } from "./llm";
+
+interface DiscoveredClip {
+  name: string;
+  description: string;
+  commands: string[];
+}
+
+async function discoverClips(names: string[]): Promise<DiscoveredClip[]> {
+  if (names.length === 0) return [];
+  try {
+    const all = await hubListClips();
+    const nameSet = new Set(names);
+    return all
+      .filter((c) => nameSet.has(c.name))
+      .map((c) => ({
+        name: c.name,
+        description: c.commands.map((cmd) => cmd.description).filter(Boolean).join("; ") || "",
+        commands: c.commands.map((cmd) => cmd.name),
+      }));
+  } catch {
+    return names.map((name) => ({ name, description: "", commands: [] }));
+  }
+}
 
 export const runWindowMin = 3;
 export const runWindowMax = 7;
@@ -139,15 +163,16 @@ async function buildEnvironment(cfg: Config): Promise<string> {
   const lines = [`<time>${new Date().toString()}</time>`];
 
   if (cfg.clips.length > 0) {
-    lines.push("<clips>");
-    for (const clip of cfg.clips) {
-      if (clip.manifest?.description) {
-        lines.push(`  <clip name=${JSON.stringify(clip.name)}>${clip.manifest.description}</clip>`);
-      } else {
-        lines.push(`  <clip name=${JSON.stringify(clip.name)} commands=${JSON.stringify(clip.commands.join(", "))} />`);
+    const clipInfos = await discoverClips(cfg.clips.map((c) => c.name));
+    if (clipInfos.length > 0) {
+      lines.push("<clips>");
+      for (const info of clipInfos) {
+        const cmds = info.commands.length > 0 ? ` commands="${info.commands.join(", ")}"` : "";
+        const desc = info.description ? `>${info.description}</clip>` : " />";
+        lines.push(`  <clip name=${JSON.stringify(info.name)}${cmds}${desc}`);
       }
+      lines.push("</clips>");
     }
-    lines.push("</clips>");
   }
 
   const skills = await listSkills().catch(() => []);

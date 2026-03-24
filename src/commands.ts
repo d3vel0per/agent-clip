@@ -7,7 +7,6 @@ import {
   configSet,
   configToJSON,
   loadConfig,
-  parseClipInput,
 } from "./config";
 import {
   createRun,
@@ -514,13 +513,12 @@ export class AgentClipCommands {
         return key ? `deleted ${key}` : "config reset";
       }
       case "add-clip": {
-        const raw = args.slice(1).join(" ") || readStdin(input);
-        const clip = parseClipInput(raw);
-        if (!clip.name || !clip.url) {
-          throw new Error("clip requires name and url");
+        const clipName = args[1];
+        if (!clipName) {
+          throw new Error("usage: config add-clip <name>");
         }
-        configAddClip(clip);
-        return `added clip ${clip.name}`;
+        configAddClip(clipName);
+        return `added clip ${clipName}`;
       }
       case "remove-clip": {
         const clipName = args[1];

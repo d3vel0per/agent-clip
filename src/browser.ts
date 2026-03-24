@@ -1,7 +1,6 @@
 import { invoke } from "@pinixai/core";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { Config } from "./config";
 import { dataRoot } from "./paths";
 import { humanSize, pinixDataURLPrefix } from "./fs";
 
@@ -34,7 +33,6 @@ interface BrowserCookiesResult {
 
 export function registerBrowserCommands(
   register: (name: string, description: string, handler: (args: string[], stdin: string) => Promise<string>) => void,
-  _cfg: Config,
 ): void {
   register(
     "browser",
