@@ -4,13 +4,11 @@ import { parseChain, Operator } from './chain';
 import {
   type Config,
   type HubConfig,
-  addHub,
   addInstalledClip,
   configDelete,
   configSet,
   configToText,
   loadConfig,
-  removeHub,
   removeInstalledClip,
 } from './config';
 import {
@@ -455,31 +453,6 @@ function registerConfigCommands(register: RegisterFn): void {
           }
           configDelete(args[1]);
           return `deleted ${args[1]}`;
-        }
-        case 'hub': {
-          const hubCmd = args[1];
-          if (hubCmd === 'add') {
-            // config hub add <name> <url> [token]
-            const hubName = args[2];
-            const hubUrl = args[3];
-            if (!hubName || !hubUrl) {
-              throw new Error('usage: config hub add <name> <url> [token]');
-            }
-            const hubToken = args[4];
-            addHub(hubName, hubUrl, hubToken);
-            cfg.hubs = loadConfig().hubs;
-            return `hub "${hubName}" added (${hubUrl})`;
-          }
-          if (hubCmd === 'remove') {
-            const hubName = args[2];
-            if (!hubName) {
-              throw new Error('usage: config hub remove <name>');
-            }
-            removeHub(hubName);
-            cfg.hubs = loadConfig().hubs;
-            return `hub "${hubName}" removed`;
-          }
-          throw new Error('usage: config hub add <name> <url> [token] | config hub remove <name>');
         }
         default:
           throw new Error(`unknown config subcommand: ${args[0]}`);

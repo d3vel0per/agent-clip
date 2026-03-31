@@ -178,52 +178,6 @@ export function configDelete(dotPath: string): void {
   saveDocument(doc);
 }
 
-export function addHub(name: string, url: string, token?: string): void {
-  ensureConfigExists();
-  const doc = parseDocument(readFileSync(configPath(), "utf8"));
-  const root = ensureRootMap(doc);
-
-  let hubs = root.get("hubs", true);
-  if (!(hubs instanceof YAMLSeq)) {
-    hubs = new YAMLSeq();
-    root.set("hubs", hubs);
-  }
-  const seq = hubs as YAMLSeq;
-
-  // Remove existing hub with same name
-  for (let i = seq.items.length - 1; i >= 0; i--) {
-    const item = seq.items[i];
-    if (item instanceof YAMLMap && item.get("name") === name) {
-      seq.items.splice(i, 1);
-    }
-  }
-
-  const entry: Record<string, string> = { name, url };
-  if (token) entry.token = token;
-  seq.items.push(doc.createNode(entry));
-  saveDocument(doc);
-}
-
-export function removeHub(name: string): void {
-  ensureConfigExists();
-  const doc = parseDocument(readFileSync(configPath(), "utf8"));
-  const root = ensureRootMap(doc);
-
-  const hubs = root.get("hubs", true);
-  if (!(hubs instanceof YAMLSeq)) {
-    throw new Error(`hub ${JSON.stringify(name)} not found`);
-  }
-
-  const idx = hubs.items.findIndex((item) =>
-    item instanceof YAMLMap && item.get("name") === name
-  );
-  if (idx < 0) {
-    throw new Error(`hub ${JSON.stringify(name)} not found`);
-  }
-  hubs.items.splice(idx, 1);
-  saveDocument(doc);
-}
-
 export function addInstalledClip(alias: string, hubName: string): void {
   ensureConfigExists();
   const doc = parseDocument(readFileSync(configPath(), "utf8"));
@@ -341,23 +295,57 @@ function setPath(doc: ReturnType<typeof parseDocument>, dotPath: string, value: 
     throw new Error("config path is required");
   }
 
-  let current: YAMLMap<unknown, unknown> = root;
+  let current: unknown = root;
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index]!;
-    if (index === parts.length - 1) {
-      current.set(part, value);
+    const isNumeric = /^\d+$/.test(part);
+    const isLast = index === parts.length - 1;
+
+    if (isLast) {
+      if (current instanceof YAMLSeq && isNumeric) {
+        const idx = parseInt(part, 10);
+        while (current.items.length <= idx) {
+          current.items.push(doc.createNode({}));
+        }
+        const item = current.items[idx];
+        if (item instanceof YAMLMap) {
+          // Can't set a scalar on a map item — replace it
+          current.items[idx] = doc.createNode(value);
+        } else {
+          current.items[idx] = doc.createNode(value);
+        }
+      } else if (current instanceof YAMLMap) {
+        current.set(part, value);
+      }
       return;
     }
 
-    const next = getMapValue(current, part);
-    if (next instanceof YAMLMap) {
-      current = next;
-      continue;
+    // Navigate to next level
+    if (current instanceof YAMLSeq && isNumeric) {
+      const idx = parseInt(part, 10);
+      while (current.items.length <= idx) {
+        current.items.push(doc.createNode({}));
+      }
+      current = current.items[idx];
+    } else if (current instanceof YAMLMap) {
+      const next = current.get(part, true);
+      if (next instanceof YAMLMap || next instanceof YAMLSeq) {
+        current = next;
+      } else {
+        // Check if the next part is numeric — create a seq, otherwise a map
+        const nextPart = parts[index + 1];
+        const nextIsNumeric = nextPart && /^\d+$/.test(nextPart);
+        if (nextIsNumeric) {
+          const created = new YAMLSeq();
+          current.set(part, created);
+          current = created;
+        } else {
+          const created = new YAMLMap();
+          current.set(part, created);
+          current = created;
+        }
+      }
     }
-
-    const created = new YAMLMap();
-    current.set(part, created);
-    current = created;
   }
 }
 
