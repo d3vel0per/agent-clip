@@ -1,6 +1,6 @@
 {
   "name": "agent",
-  "version": "0.3.2",
+  "version": "0.3.4",
   "type": "clip",
   "description": "AI Agent — agentic loop with shell, packages, and memory",
   "domain": "ai",

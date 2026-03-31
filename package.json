@@ -1,6 +1,7 @@
 {
   "name": "@pinix/agent",
   "version": "0.3.4",
+  "description": "AI Agent — agentic loop with shell, packages, and memory",
   "type": "module",
   "scripts": {
     "dev": "/Users/cp/.bun/bin/bun run index.ts",
