@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { parseDocument, YAMLMap } from "yaml";
+import { parseDocument, YAMLMap, YAMLSeq } from "yaml";
 import { configPath, ensureDataLayout, seedRoot } from "./paths";
 import { maskSecret } from "./shared";
 
@@ -175,6 +175,52 @@ export function configDelete(dotPath: string): void {
   }
   const doc = parseDocument(readFileSync(configPath(), "utf8"));
   deletePath(doc, dotPath);
+  saveDocument(doc);
+}
+
+export function addHub(name: string, url: string, token?: string): void {
+  ensureConfigExists();
+  const doc = parseDocument(readFileSync(configPath(), "utf8"));
+  const root = ensureRootMap(doc);
+
+  let hubs = root.get("hubs", true);
+  if (!(hubs instanceof YAMLSeq)) {
+    hubs = new YAMLSeq();
+    root.set("hubs", hubs);
+  }
+  const seq = hubs as YAMLSeq;
+
+  // Remove existing hub with same name
+  for (let i = seq.items.length - 1; i >= 0; i--) {
+    const item = seq.items[i];
+    if (item instanceof YAMLMap && item.get("name") === name) {
+      seq.items.splice(i, 1);
+    }
+  }
+
+  const entry: Record<string, string> = { name, url };
+  if (token) entry.token = token;
+  seq.items.push(doc.createNode(entry));
+  saveDocument(doc);
+}
+
+export function removeHub(name: string): void {
+  ensureConfigExists();
+  const doc = parseDocument(readFileSync(configPath(), "utf8"));
+  const root = ensureRootMap(doc);
+
+  const hubs = root.get("hubs", true);
+  if (!(hubs instanceof YAMLSeq)) {
+    throw new Error(`hub ${JSON.stringify(name)} not found`);
+  }
+
+  const idx = hubs.items.findIndex((item) =>
+    item instanceof YAMLMap && item.get("name") === name
+  );
+  if (idx < 0) {
+    throw new Error(`hub ${JSON.stringify(name)} not found`);
+  }
+  hubs.items.splice(idx, 1);
   saveDocument(doc);
 }
 
