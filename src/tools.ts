@@ -3,12 +3,12 @@ import { Database } from 'bun:sqlite';
 import { parseChain, Operator } from './chain';
 import {
   type Config,
-  addInstalledClip,
+  addPinnedClip,
   configDelete,
   configSet,
   configToText,
   loadConfig,
-  removeInstalledClip,
+  removePinnedClip,
 } from './config';
 import {
   countTopicRuns,
@@ -216,14 +216,14 @@ export function runToolDef(commands: Record<string, string>): ToolDef {
   };
 }
 
-export function buildRegistry(db: Database, cfg: Config): Registry {
+export async function buildRegistry(db: Database, cfg: Config): Promise<Registry> {
   const registry = new Registry();
   registerMemoryCommands(registry.register.bind(registry), db, cfg);
   registerTopicCommands(registry.register.bind(registry), db, cfg);
   registerEventCommands(registry.register.bind(registry), db);
   registerConfigCommands(registry.register.bind(registry));
   registerPkgCommands(registry, cfg);
-  registerInstalledClipCommands(registry, cfg);
+  await registerAllRuntimeClipCommands(registry);
   return registry;
 }
 
@@ -464,12 +464,12 @@ function registerPkgCommands(registry: Registry, cfg: Config): void {
   registry.register(
     'pkg',
     [
-      'Manage installed packages (Clips).',
-      '  pkg list                          — list installed packages',
-      '  pkg search <query>                — search available clips',
-      '  pkg add <name>                    — install a Clip',
-      '  pkg remove <name>                 — uninstall a Clip',
-      '  pkg info <name>                   — show Clip commands',
+      'Manage clips and pinning.',
+      '  pkg list                          — list ALL runtime clips (marks pinned)',
+      '  pkg search <query>                — search the Registry for clips',
+      '  pkg pin <clip>                    — pin a clip to system prompt context',
+      '  pkg unpin <clip>                  — unpin a clip from context',
+      '  pkg info <clip>                   — show clip details and commands',
     ].join('\n'),
     async (args) => {
       if (args.length === 0 || args[0] === 'list') {
@@ -478,55 +478,33 @@ function registerPkgCommands(registry: Registry, cfg: Config): void {
 
       switch (args[0]) {
         case 'search':
-          return pkgSearch(cfg, args.slice(1));
-        case 'add':
-          return pkgAdd(registry, cfg, args.slice(1));
-        case 'remove':
-          return pkgRemove(args.slice(1));
+          return pkgSearch(args.slice(1));
+        case 'pin':
+          return pkgPin(cfg, args.slice(1));
+        case 'unpin':
+          return pkgUnpin(cfg, args.slice(1));
         case 'info':
-          return pkgInfo(cfg, args.slice(1));
+          return pkgInfo(args.slice(1));
         default:
-          throw new Error(`unknown: pkg ${args[0]}. Use: list|search|add|remove|info`);
+          throw new Error(`unknown: pkg ${args[0]}. Use: list|search|pin|unpin|info`);
       }
     },
   );
 }
 
-function pkgList(cfg: Config): string {
-  const entries = Object.entries(cfg.installed);
-  if (entries.length === 0) {
-    return 'No packages installed. Use `pkg search` to find packages, then `pkg add <name>` to install.';
-  }
-
-  const lines = [`Installed packages (${entries.length}):`];
-  for (const [alias, info] of entries) {
-    lines.push(`  ${alias}  (hub: ${info.hub})`);
-  }
-  return lines.join('\n');
-}
-
-async function pkgSearch(cfg: Config, args: string[]): Promise<string> {
-  const query = args.join(' ').trim().toLowerCase();
-
+async function pkgList(cfg: Config): Promise<string> {
   try {
     const clips = await listClips();
-    const filtered = query
-      ? clips.filter((c) => {
-          const cmds = c.commands ?? [];
-          const searchable = [c.name, c.package, ...cmds.map((cmd) => cmd.name), ...cmds.map((cmd) => cmd.description ?? '')].join(' ').toLowerCase();
-          return searchable.includes(query);
-        })
-      : clips;
-
-    if (filtered.length === 0) {
-      return query ? `No clips matching "${query}".` : 'No clips found.';
+    if (clips.length === 0) {
+      return 'No clips found.';
     }
 
-    const lines = [`${filtered.length} clip(s):`];
-    for (const clip of filtered) {
+    const pinnedSet = new Set(cfg.pinned);
+    const lines = [`${clips.length} clip(s):`];
+    for (const clip of clips) {
       const cmds = (clip.commands ?? []).map((c) => c.name).join(', ');
-      const installed = cfg.installed[clip.name] ? ' (installed)' : '';
-      lines.push(`  ${clip.name}${cmds ? ` — ${cmds}` : ''}${installed}`);
+      const pinLabel = pinnedSet.has(clip.name) ? ' (pinned)' : '';
+      lines.push(`  ${clip.name}${cmds ? ` — ${cmds}` : ''}${pinLabel}`);
     }
     return lines.join('\n');
   } catch (err) {
@@ -534,49 +512,71 @@ async function pkgSearch(cfg: Config, args: string[]): Promise<string> {
   }
 }
 
-async function pkgAdd(registry: Registry, cfg: Config, args: string[]): Promise<string> {
-  if (args.length === 0) {
-    throw new Error('usage: pkg add <name>');
+const REGISTRY_SEARCH_URL = 'https://api.pinix.ai/search';
+
+async function pkgSearch(args: string[]): Promise<string> {
+  const query = args.join(' ').trim();
+  if (!query) {
+    throw new Error('usage: pkg search <query>');
   }
 
-  const name = args[0];
+  try {
+    const url = `${REGISTRY_SEARCH_URL}?q=${encodeURIComponent(query)}`;
+    const resp = await fetch(url);
+    if (!resp.ok) {
+      throw new Error(`registry returned ${resp.status}`);
+    }
+    const data = await resp.json() as { packages?: Array<{ name: string; description?: string; type?: string; domain?: string }>; total?: number };
+    const packages = data.packages ?? [];
+    if (packages.length === 0) {
+      return `No packages matching "${query}" in the Registry.`;
+    }
 
-  if (cfg.installed[name]) {
-    return `"${name}" is already installed (hub: ${cfg.installed[name].hub}).`;
+    const lines = [`${packages.length} result(s) (total: ${data.total ?? packages.length}):`];
+    for (const pkg of packages) {
+      const desc = pkg.description ? ` — ${pkg.description}` : '';
+      const domain = pkg.domain ? ` [${pkg.domain}]` : '';
+      lines.push(`  ${pkg.name}${domain}${desc}`);
+    }
+    return lines.join('\n');
+  } catch (err) {
+    return `error: ${toErrorMessage(err)}`;
   }
-
-  // Verify the clip exists via IPC
-  const clips = await listClips();
-  const found = clips.find((c) => c.name === name);
-  if (!found) {
-    throw new Error(`Clip "${name}" not found.`);
-  }
-
-  const hubName = 'local';
-  addInstalledClip(name, hubName);
-  cfg.installed[name] = { hub: hubName };
-  registerSingleClipCommand(registry, cfg, name);
-  return `Installed "${name}". It is now available as a command.`;
 }
 
-function pkgRemove(args: string[]): string {
-  if (args.length === 0) {
-    throw new Error('usage: pkg remove <name>');
-  }
+function pkgPin(cfg: Config, args: string[]): string {
   const name = args[0];
-  removeInstalledClip(name);
-  return `Removed "${name}".`;
+  if (!name) {
+    throw new Error('usage: pkg pin <clip>');
+  }
+  if (cfg.pinned.includes(name)) {
+    return `"${name}" is already pinned.`;
+  }
+  addPinnedClip(name);
+  cfg.pinned.push(name);
+  return `Pinned "${name}". Its info will appear in system prompt.`;
 }
 
-async function pkgInfo(cfg: Config, args: string[]): Promise<string> {
+function pkgUnpin(cfg: Config, args: string[]): string {
+  const name = args[0];
+  if (!name) {
+    throw new Error('usage: pkg unpin <clip>');
+  }
+  removePinnedClip(name);
+  const idx = cfg.pinned.indexOf(name);
+  if (idx !== -1) {
+    cfg.pinned.splice(idx, 1);
+  }
+  return `Unpinned "${name}".`;
+}
+
+async function pkgInfo(args: string[]): Promise<string> {
   if (args.length === 0) {
-    throw new Error('usage: pkg info <name>');
+    throw new Error('usage: pkg info <clip>');
   }
 
   const name = args[0];
-  const entry = cfg.installed[name];
 
-  // Find clip info via IPC
   let clipInfo: RuntimeClipInfo | undefined;
   try {
     const clips = await listClips();
@@ -585,12 +585,7 @@ async function pkgInfo(cfg: Config, args: string[]): Promise<string> {
     // IPC unavailable
   }
 
-  const lines = [`Package: ${name}`];
-  if (entry) {
-    lines.push(`Status: installed (hub: ${entry.hub})`);
-  } else {
-    lines.push('Status: not installed');
-  }
+  const lines = [`Clip: ${name}`];
 
   if (clipInfo) {
     if (clipInfo.package) lines.push(`Package: ${clipInfo.package}`);
@@ -602,46 +597,52 @@ async function pkgInfo(cfg: Config, args: string[]): Promise<string> {
       }
     }
   } else {
-    lines.push('(no info available — clip not found)');
+    lines.push('(not found in runtime — clip may not be running)');
   }
 
   return lines.join('\n');
 }
 
 /**
- * Register installed clips as top-level commands.
- * Each installed clip's alias becomes a command name.
- * Subcommands are forwarded via IPC invokeClip().
+ * Register ALL runtime clips as top-level commands.
+ * Each clip's alias becomes a command that forwards subcommands via IPC invokeClip().
  */
-function registerInstalledClipCommands(registry: Registry, cfg: Config): void {
-  for (const alias of Object.keys(cfg.installed)) {
-    registerSingleClipCommand(registry, cfg, alias);
+async function registerAllRuntimeClipCommands(registry: Registry): Promise<void> {
+  let clips: RuntimeClipInfo[] = [];
+  try {
+    clips = await listClips();
+  } catch {
+    // IPC unavailable at startup — no clips registered
+    return;
+  }
+
+  for (const clip of clips) {
+    registerSingleClipCommand(registry, clip);
   }
 }
 
-function registerSingleClipCommand(registry: Registry, cfg: Config, alias: string): void {
-  const clipInfo = cfg.installed[alias];
-  const hubLabel = clipInfo?.hub ?? 'unknown';
+function registerSingleClipCommand(registry: Registry, clip: RuntimeClipInfo): void {
+  const cmds = (clip.commands ?? []).map((c) => c.name).join(', ');
+  const desc = cmds ? `Clip commands: ${cmds}` : `Clip "${clip.name}"`;
   registry.register(
-    alias,
-    `Installed package (hub: ${hubLabel}). Run "${alias} <command> [--param value]" or just "${alias}" for info.`,
+    clip.name,
+    `${desc}. Run "${clip.name} <command> [--param value]" or "${clip.name} --help".`,
     async (args, stdin) => {
       if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-        return pkgInfo(cfg, [alias]);
+        return pkgInfo([clip.name]);
       }
 
       const command = args[0];
       const input = buildClipInvokeInput(args.slice(1), stdin);
 
       try {
-        const result = await invokeClip(alias, command, input);
+        const result = await invokeClip(clip.name, command, input);
         if (typeof result === 'string') {
           return result;
         }
         return JSON.stringify(result, null, 2);
       } catch (error) {
-        // Try to give a usage hint
-        const hint = await getCommandUsageHint(alias, command);
+        const hint = getCommandUsageHint(clip, command);
         if (hint) {
           throw new Error(`${toErrorMessage(error)}\n\n${hint}`);
         }
@@ -651,17 +652,10 @@ function registerSingleClipCommand(registry: Registry, cfg: Config, alias: strin
   );
 }
 
-async function getCommandUsageHint(clipName: string, command: string): Promise<string | null> {
-  try {
-    const clips = await listClips();
-    const clip = clips.find((c) => c.name === clipName);
-    const cmd = (clip?.commands ?? []).find((c) => c.name === command);
-    if (!cmd) return null;
-
-    return `usage: ${clipName} ${command} [--param value ...]`;
-  } catch {
-    return null;
-  }
+function getCommandUsageHint(clip: RuntimeClipInfo, command: string): string | null {
+  const cmd = (clip.commands ?? []).find((c) => c.name === command);
+  if (!cmd) return null;
+  return `usage: ${clip.name} ${command} [--param value ...]`;
 }
 
 function buildClipInvokeInput(args: string[], stdin: string): unknown {

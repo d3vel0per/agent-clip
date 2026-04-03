@@ -1,8 +1,35 @@
+import { listClips, type RuntimeClipInfo } from "@pinixai/core";
 import { Database } from "bun:sqlite";
 import type { Config } from "./config";
 import { getCompletedRuns, loadMessagesByRunID } from "./db";
 import { searchMemorySemantic, getEmbedding } from "./memory";
 import { textMessage, type Message } from "./llm";
+
+// --- Clip usage tracking ---
+
+const clipUsage = new Map<string, number>(); // alias → lastUsedRound
+let currentRound = 0;
+const USAGE_WINDOW = 5; // keep clips in context for 5 rounds after last use
+
+export function advanceRound(): void {
+  currentRound += 1;
+}
+
+export function trackClipUsage(alias: string): void {
+  clipUsage.set(alias, currentRound);
+}
+
+export function getContextClipAliases(pinned: string[]): string[] {
+  const context = new Set(pinned);
+  for (const [alias, lastRound] of clipUsage) {
+    if (currentRound - lastRound <= USAGE_WINDOW) {
+      context.add(alias);
+    }
+  }
+  return [...context];
+}
+
+// --- Context building ---
 
 export const runWindowMin = 3;
 export const runWindowMax = 7;
@@ -20,13 +47,13 @@ export const systemSuffix = `
 - **自发现** — 不确定怎么用就跑 \`help\` 或 \`<command> --help\`，不要猜参数
 - 命令报错时，读错误信息自行修正再重试，不要直接放弃
 
-## 包管理
+## Clips
 
-已安装的包直接作为顶层命令使用。通过 \`pkg\` 管理能力边界：
-- \`pkg list\` — 查看已安装的包
-- \`pkg search <query>\` — 从 Hub 搜索新能力
-- \`pkg add <name>\` — 安装（之后可作为顶层命令）
-- \`pkg remove <name>\` — 卸载
+所有运行中的 Clip 直接作为顶层命令使用。通过 \`pkg\` 管理 Clip 上下文：
+- \`pkg list\` — 列出所有运行中的 Clip（标记已 pin 的）
+- \`pkg search <query>\` — 从 Registry 搜索新 Clip
+- \`pkg pin <name>\` — 固定 Clip 到系统提示上下文
+- \`pkg unpin <name>\` — 取消固定
 - \`pkg info <name>\` 或 \`<name> --help\` — 查看命令和参数
 
 参数用 \`--key value\` 格式。不确定参数时先查再用。
@@ -62,8 +89,16 @@ export interface ContextResult {
 }
 
 export async function buildContext(db: Database, cfg: Config, topicId: string, userMessage: string): Promise<ContextResult> {
+  advanceRound();
+
   let systemPrompt = cfg.name ? `你是 ${cfg.name}。\n\n` : "";
   systemPrompt += cfg.system_prompt + systemSuffix;
+
+  // Inject context clips into system prompt
+  const clipSection = await buildClipContextSection(cfg);
+  if (clipSection) {
+    systemPrompt += clipSection;
+  }
 
   const completedRuns = getCompletedRuns(db, topicId);
   if (completedRuns.length === 0) {
@@ -135,9 +170,8 @@ async function buildRecall(db: Database, cfg: Config, userMessage: string): Prom
 function buildEnvironment(cfg: Config): string {
   const lines = [`<time>${new Date().toString()}</time>`];
 
-  const installed = Object.keys(cfg.installed);
-  if (installed.length > 0) {
-    lines.push(`<installed-packages>${installed.join(", ")}</installed-packages>`);
+  if (cfg.pinned.length > 0) {
+    lines.push(`<pinned-clips>${cfg.pinned.join(", ")}</pinned-clips>`);
   }
 
   const hubs = cfg.hubs.map((h) => h.name);
@@ -146,6 +180,34 @@ function buildEnvironment(cfg: Config): string {
   }
 
   return lines.join("\n");
+}
+
+async function buildClipContextSection(cfg: Config): Promise<string> {
+  const contextAliases = getContextClipAliases(cfg.pinned);
+  if (contextAliases.length === 0) {
+    return "";
+  }
+
+  let allClips: RuntimeClipInfo[] = [];
+  try {
+    allClips = await listClips();
+  } catch {
+    return "";
+  }
+
+  const clipMap = new Map(allClips.map((c) => [c.name, c]));
+  const lines: string[] = ["\n\n## Available Clips\n"];
+
+  for (const alias of contextAliases) {
+    const clip = clipMap.get(alias);
+    if (!clip) continue;
+    const cmds = (clip.commands ?? [])
+      .map((c) => c.description ? `${c.name} — ${c.description}` : c.name)
+      .join(", ");
+    lines.push(`- **${alias}**: ${cmds || "(no commands)"}`);
+  }
+
+  return lines.length > 1 ? lines.join("\n") : "";
 }
 
 function buildTopicHistory(db: Database, runs: Array<{ id: string; topicId: string; startedAt: number }>): string {

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { Database } from "bun:sqlite";
 import type { Config } from "./config";
 import type { ContextResult } from "./context";
+import { trackClipUsage } from "./context";
 import { drainInbox, tryFinishRun } from "./db";
 import { callLLM, toolResultMessage, type Message, type ToolCall } from "./llm";
 import { imageDataFromBytes, isImageFile } from "./media";
@@ -146,6 +147,11 @@ async function executeToolCall(registry: Registry, toolCall: ToolCall): Promise<
   const args = parseToolArguments(toolCall);
   if (!args.command) {
     return "[error] empty command";
+  }
+  // Track clip usage: extract the first token (clip alias) from the command
+  const firstToken = args.command.trim().split(/\s+/)[0];
+  if (firstToken) {
+    trackClipUsage(firstToken);
   }
   return await registry.exec(args.command, args.stdin);
 }

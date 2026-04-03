@@ -359,7 +359,7 @@ export class AgentClipCommands {
           };
         }
 
-        const registry = buildRegistry(db, cfg);
+        const registry = await buildRegistry(db, cfg);
         const newMessages = await runLoop(cfg, ctx, registry, out, {
           db,
           runId: execution.runId,

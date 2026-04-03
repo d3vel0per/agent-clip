@@ -15,15 +15,10 @@ export interface HubConfig {
   token?: string;
 }
 
-export interface InstalledClip {
-  hub: string; // hub name
-  token?: string; // clip token for authenticated invocations
-}
-
 export interface Config {
   name: string;
-  hubs: HubConfig[];
-  installed: Record<string, InstalledClip>; // alias → hub mapping
+  hubs: HubConfig[]; // keep for Registry URL
+  pinned: string[];   // manually pinned clip aliases
   providers: Record<string, ProviderConfig>;
   llm_provider: string;
   llm_model: string;
@@ -39,7 +34,7 @@ export interface ProviderJSON {
 export interface ConfigJSON {
   name: string;
   hubs: HubConfig[];
-  installed: Record<string, InstalledClip>;
+  pinned: string[];
   providers: Record<string, ProviderJSON>;
   llm_provider: string;
   llm_model: string;
@@ -50,7 +45,7 @@ const DEFAULT_CONFIG = `name: pi
 
 hubs: []
 
-installed: {}
+pinned: []
 
 providers:
   openrouter:
@@ -89,7 +84,7 @@ export function loadConfig(): Config {
   const cfg: Config = {
     name: asString(parsed?.name),
     hubs,
-    installed: normalizeInstalled(parsed?.installed),
+    pinned: normalizeStringArray(parsed?.pinned),
     providers: normalizeProviders(parsed?.providers),
     llm_provider: asString(parsed?.llm_provider),
     llm_model: asString(parsed?.llm_model),
@@ -133,7 +128,7 @@ export function configToJSON(cfg: Config): ConfigJSON {
   return {
     name: cfg.name,
     hubs: cfg.hubs,
-    installed: cfg.installed,
+    pinned: cfg.pinned,
     providers: Object.fromEntries(
       Object.entries(cfg.providers).map(([name, provider]) => [name, {
         protocol: provider.protocol,
@@ -151,7 +146,7 @@ export function configToText(cfg: Config): string {
   const lines = [
     `name: ${cfg.name}`,
     `hubs: ${cfg.hubs.map((h) => `${h.name}(${h.url})`).join(", ") || "(none)"}`,
-    `installed: ${Object.keys(cfg.installed).join(", ") || "(none)"}`,
+    `pinned: ${cfg.pinned.join(", ") || "(none)"}`,
     `llm_provider: ${cfg.llm_provider}`,
     `llm_model: ${cfg.llm_model}`,
     `providers: ${Object.keys(cfg.providers).join(", ")}`,
@@ -178,26 +173,47 @@ export function configDelete(dotPath: string): void {
   saveDocument(doc);
 }
 
-export function addInstalledClip(alias: string, hubName: string): void {
-  ensureConfigExists();
-  const doc = parseDocument(readFileSync(configPath(), "utf8"));
-  doc.setIn(["installed", alias], doc.createNode({ hub: hubName }));
-  saveDocument(doc);
-}
-
-export function removeInstalledClip(alias: string): void {
+export function addPinnedClip(alias: string): void {
   ensureConfigExists();
   const doc = parseDocument(readFileSync(configPath(), "utf8"));
   const root = ensureRootMap(doc);
 
-  const installed = root.get("installed", true);
-  if (!(installed instanceof YAMLMap)) {
-    throw new Error(`clip ${JSON.stringify(alias)} is not installed`);
+  const raw = root.get("pinned", true);
+  let pinned: YAMLSeq;
+  if (raw instanceof YAMLSeq) {
+    pinned = raw;
+  } else {
+    pinned = new YAMLSeq();
+    root.set("pinned", pinned);
   }
 
-  if (!installed.delete(alias)) {
-    throw new Error(`clip ${JSON.stringify(alias)} is not installed`);
+  // Avoid duplicates
+  const items = pinned.toJSON() as unknown[];
+  if (items.includes(alias)) {
+    return;
   }
+
+  pinned.add(doc.createNode(alias));
+  saveDocument(doc);
+}
+
+export function removePinnedClip(alias: string): void {
+  ensureConfigExists();
+  const doc = parseDocument(readFileSync(configPath(), "utf8"));
+  const root = ensureRootMap(doc);
+
+  const raw = root.get("pinned", true);
+  if (!(raw instanceof YAMLSeq)) {
+    throw new Error(`clip ${JSON.stringify(alias)} is not pinned`);
+  }
+
+  const items = raw.toJSON() as unknown[];
+  const idx = items.indexOf(alias);
+  if (idx === -1) {
+    throw new Error(`clip ${JSON.stringify(alias)} is not pinned`);
+  }
+
+  raw.delete(idx);
   saveDocument(doc);
 }
 
@@ -217,23 +233,11 @@ function normalizeHubs(value: unknown): HubConfig[] {
     .filter((hub) => hub.url && hub.name);
 }
 
-function normalizeInstalled(value: unknown): Record<string, InstalledClip> {
-  if (!value || typeof value !== "object") {
-    return {};
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
   }
-
-  const installed: Record<string, InstalledClip> = {};
-  for (const [alias, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!raw || typeof raw !== "object") {
-      continue;
-    }
-    const entry = raw as Record<string, unknown>;
-    installed[alias] = {
-      hub: asString(entry.hub),
-      token: asOptionalString(entry.token),
-    };
-  }
-  return installed;
+  return value.filter((item): item is string => typeof item === "string" && item.length > 0);
 }
 
 function normalizeProviders(value: unknown): Record<string, ProviderConfig> {
