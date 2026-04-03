@@ -201,10 +201,24 @@ async function buildClipContextSection(cfg: Config): Promise<string> {
   for (const alias of contextAliases) {
     const clip = clipMap.get(alias);
     if (!clip) continue;
-    const cmds = (clip.commands ?? [])
-      .map((c) => c.description ? `${c.name} — ${c.description}` : c.name)
-      .join(", ");
-    lines.push(`- **${alias}**: ${cmds || "(no commands)"}`);
+    const isPinned = cfg.pinned.includes(alias);
+    const label = isPinned ? "(pinned)" : "(recent)";
+    lines.push(`### ${alias} ${label}`);
+    for (const cmd of clip.commands ?? []) {
+      lines.push(`- \`${alias} ${cmd.name}\`${cmd.description ? ` — ${cmd.description}` : ""}`);
+      if (cmd.input) {
+        try {
+          const schema = JSON.parse(cmd.input);
+          const props = schema.properties || {};
+          const required = new Set(schema.required || []);
+          for (const [k, v] of Object.entries(props) as [string, any][]) {
+            const req = required.has(k) ? "" : "?";
+            const desc = v.description ? ` — ${v.description}` : "";
+            lines.push(`  - \`--${k}${req}\`: ${v.type || "any"}${desc}`);
+          }
+        } catch {}
+      }
+    }
   }
 
   return lines.length > 1 ? lines.join("\n") : "";
