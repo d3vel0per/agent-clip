@@ -512,7 +512,8 @@ async function pkgSearch(cfg: Config, args: string[]): Promise<string> {
     const clips = await listClips();
     const filtered = query
       ? clips.filter((c) => {
-          const searchable = [c.name, c.package, ...c.commands.map((cmd) => cmd.name), ...c.commands.map((cmd) => cmd.description ?? '')].join(' ').toLowerCase();
+          const cmds = c.commands ?? [];
+          const searchable = [c.name, c.package, ...cmds.map((cmd) => cmd.name), ...cmds.map((cmd) => cmd.description ?? '')].join(' ').toLowerCase();
           return searchable.includes(query);
         })
       : clips;
@@ -523,7 +524,7 @@ async function pkgSearch(cfg: Config, args: string[]): Promise<string> {
 
     const lines = [`${filtered.length} clip(s):`];
     for (const clip of filtered) {
-      const cmds = clip.commands.map((c) => c.name).join(', ');
+      const cmds = (clip.commands ?? []).map((c) => c.name).join(', ');
       const installed = cfg.installed[clip.name] ? ' (installed)' : '';
       lines.push(`  ${clip.name}${cmds ? ` — ${cmds}` : ''}${installed}`);
     }
@@ -594,9 +595,9 @@ async function pkgInfo(cfg: Config, args: string[]): Promise<string> {
   if (clipInfo) {
     if (clipInfo.package) lines.push(`Package: ${clipInfo.package}`);
     if (clipInfo.version) lines.push(`Version: ${clipInfo.version}`);
-    if (clipInfo.commands.length > 0) {
+    if ((clipInfo.commands ?? []).length > 0) {
       lines.push('', 'Commands:');
-      for (const cmd of clipInfo.commands) {
+      for (const cmd of clipInfo.commands ?? []) {
         lines.push(`  ${cmd.name}${cmd.description ? ` — ${cmd.description}` : ''}`);
       }
     }
@@ -654,7 +655,7 @@ async function getCommandUsageHint(clipName: string, command: string): Promise<s
   try {
     const clips = await listClips();
     const clip = clips.find((c) => c.name === clipName);
-    const cmd = clip?.commands.find((c) => c.name === command);
+    const cmd = (clip?.commands ?? []).find((c) => c.name === command);
     if (!cmd) return null;
 
     return `usage: ${clipName} ${command} [--param value ...]`;
