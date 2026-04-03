@@ -669,7 +669,28 @@ function registerSingleClipCommand(registry: Registry, clip: RuntimeClipInfo): v
 function getCommandUsageHint(clip: RuntimeClipInfo, command: string): string | null {
   const cmd = (clip.commands ?? []).find((c) => c.name === command);
   if (!cmd) return null;
-  return `usage: ${clip.name} ${command} [--param value ...]`;
+
+  if (!cmd.input) {
+    return `usage: ${clip.name} ${command} [--param value ...]`;
+  }
+
+  try {
+    const schema = JSON.parse(cmd.input);
+    const props = schema.properties || {};
+    const required = new Set(schema.required || []);
+    const params = Object.entries(props).map(([k, v]: [string, any]) => {
+      const req = required.has(k);
+      const type = v.type || 'any';
+      const desc = v.description ? ` — ${v.description}` : '';
+      return `  --${k}${req ? '' : '?'} <${type}>${desc}`;
+    });
+    if (params.length === 0) {
+      return `usage: ${clip.name} ${command} (no parameters)`;
+    }
+    return `usage: ${clip.name} ${command}\n${params.join('\n')}`;
+  } catch {
+    return `usage: ${clip.name} ${command} [--param value ...]`;
+  }
 }
 
 function buildClipInvokeInput(args: string[], stdin: string): unknown {
