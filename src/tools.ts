@@ -185,7 +185,7 @@ export function tokenize(input: string): string[] {
 
 export function runToolDef(commands: Record<string, string>): ToolDef {
   const description = [
-    'Your ONLY tool. Execute commands via run(command="..."). Supports chaining: cmd1 && cmd2, cmd1 | cmd2.',
+    'Your ONLY tool. Execute commands via run(command="..."). Supports chaining: cmd1 && cmd2, cmd1 | cmd2. Use stdin for multi-line input.',
     '',
     'Available commands:',
     ...Object.entries(commands)
@@ -203,11 +203,11 @@ export function runToolDef(commands: Record<string, string>): ToolDef {
         properties: {
           command: {
             type: 'string',
-            description: 'Unix-style command to execute',
+            description: 'Command to execute',
           },
           stdin: {
             type: 'string',
-            description: 'Standard input for the command',
+            description: 'Standard input for the command (multi-line content)',
           },
         },
         required: ['command'],
@@ -624,7 +624,12 @@ async function pkgInfo(args: string[]): Promise<string> {
 async function registerAllRuntimeClipCommands(registry: Registry): Promise<void> {
   let clips: RuntimeClipInfo[] = [];
   try {
-    clips = await listClips();
+    clips = await Promise.race([
+      listClips(),
+      new Promise<RuntimeClipInfo[]>((_, reject) =>
+        setTimeout(() => reject(new Error("IPC timeout")), 3000)
+      ),
+    ]);
   } catch {
     // IPC unavailable at startup — no clips registered
     return;

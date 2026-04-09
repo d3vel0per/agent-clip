@@ -6,6 +6,7 @@ import type { ContextResult } from "./context";
 import { trackClipUsage } from "./context";
 import { drainInbox, tryFinishRun } from "./db";
 import { callLLM, toolResultMessage, type Message, type ToolCall } from "./llm";
+import { log, setCurrentRunId } from "./log";
 import { imageDataFromBytes, isImageFile } from "./media";
 import type { Output } from "./output";
 import { dataRoot } from "./paths";
@@ -26,6 +27,7 @@ export async function runLoop(
   out: Output,
   rc?: RunContext,
 ): Promise<Message[]> {
+  setCurrentRunId(rc?.runId ?? "");
   const context: Message[] = [{ role: "system", content: ctx.systemPrompt }, ...ctx.messages];
   const lastMessage = ctx.messages.at(-1);
   const newMessages: Message[] = lastMessage ? [lastMessage] : [];
@@ -111,9 +113,11 @@ export async function runLoop(
     context.push(assistantMessage);
     newMessages.push(assistantMessage);
     out.done();
+    setCurrentRunId("");
     return newMessages;
   }
 
+  setCurrentRunId("");
   throw new Error(`agentic loop exceeded ${maxIterations} iterations`);
 }
 
@@ -146,24 +150,32 @@ function wrapInjectedMessage(message: string): Message {
 async function executeToolCall(registry: Registry, toolCall: ToolCall): Promise<string> {
   const args = parseToolArguments(toolCall);
   if (!args.command) {
-    return "[error] empty command";
+    return args.parseError ?? "[error] empty command";
   }
   // Track clip usage: extract the first token (clip alias) from the command
   const firstToken = args.command.trim().split(/\s+/)[0];
   if (firstToken) {
     trackClipUsage(firstToken);
   }
-  return await registry.exec(args.command, args.stdin);
+  const result = await registry.exec(args.command, args.stdin);
+  if (result.startsWith("[error]")) {
+    log("run.error", { command: args.command, stdin_length: args.stdin.length || undefined, error: result });
+  }
+  return result;
 }
 
-function parseToolArguments(toolCall: ToolCall): { command: string; stdin: string } {
+function parseToolArguments(toolCall: ToolCall): { command: string; stdin: string; parseError?: string } {
   let parsed: { command?: string; stdin?: string } = {};
   try {
     parsed = JSON.parse(toolCall.function.arguments || "{}") as { command?: string; stdin?: string };
   } catch (error) {
+    const raw = toolCall.function.arguments ?? "";
+    const preview = raw.length > 500 ? raw.slice(0, 500) + `... (${raw.length} chars total)` : raw;
+    log("run.parse_error", { tool: toolCall.function.name, error: error instanceof Error ? error.message : String(error), raw_length: raw.length, raw_preview: preview });
     return {
-      command: `[error] parse arguments: ${error instanceof Error ? error.message : String(error)}`,
+      command: "",
       stdin: "",
+      parseError: `[error] failed to parse tool call arguments (JSON truncated or malformed)\n${error instanceof Error ? error.message : String(error)}\nraw arguments: ${preview}`,
     };
   }
 

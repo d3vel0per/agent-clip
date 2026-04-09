@@ -1,4 +1,5 @@
 import type { Config, ProviderConfig } from "./config";
+import { log } from "./log";
 import type { ImageData } from "./media";
 
 export interface FunctionCall {
@@ -125,11 +126,19 @@ export async function callLLM(
     throw new Error(`no api_key for llm provider ${JSON.stringify(cfg.llm_provider)}`);
   }
 
+  log("llm.request", { model: cfg.llm_model, messages: messages.length, tools: tools.length });
+
+  let response: LLMResponse;
   if ((provider.protocol || "openai") === "anthropic") {
-    return callAnthropic(provider, cfg.llm_model, messages, tools, onToken ?? undefined, onThinking ?? undefined, signal);
+    response = await callAnthropic(provider, cfg.llm_model, messages, tools, onToken ?? undefined, onThinking ?? undefined, signal, cfg.max_tokens);
+  } else {
+    response = await callOpenAI(provider, cfg.llm_model, messages, tools, onToken ?? undefined, onThinking ?? undefined, signal, cfg.max_tokens);
   }
 
-  return callOpenAI(provider, cfg.llm_model, messages, tools, onToken ?? undefined, onThinking ?? undefined, signal);
+  const tcSummary = response.toolCalls.map(tc => ({ name: tc.function.name, args_length: tc.function.arguments.length }));
+  log("llm.response", { content_length: response.content.length, tool_calls: tcSummary });
+
+  return response;
 }
 
 function messagesToAPI(messages: Message[]): APIMessage[] {
@@ -172,20 +181,24 @@ async function callOpenAI(
   onToken?: (token: string) => void,
   onThinking?: (token: string) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<LLMResponse> {
+  const body: Record<string, unknown> = {
+    model,
+    messages: messagesToAPI(messages),
+    tools,
+    stream: true,
+  };
+  if (maxTokens) body.max_tokens = maxTokens;
+  if (provider.provider) body.provider = provider.provider;
+
   const response = await fetch(`${provider.base_url}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${provider.api_key}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: messagesToAPI(messages),
-      tools,
-      stream: true,
-      max_tokens: 16384,
-    }),
+    body: JSON.stringify(body),
     signal,
   });
 
@@ -365,6 +378,7 @@ async function callAnthropic(
   onToken?: (token: string) => void,
   onThinking?: (token: string) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<LLMResponse> {
   const converted = convertMessagesForAnthropic(messages);
   const response = await fetch(`${provider.base_url}/v1/messages`, {
@@ -377,7 +391,7 @@ async function callAnthropic(
     body: JSON.stringify({
       model,
       system: converted.system,
-      max_tokens: 16384,
+      max_tokens: maxTokens || 65536,
       stream: true,
       messages: converted.messages,
       tools: tools.map((tool) => ({
@@ -467,40 +481,72 @@ async function callAnthropic(
   };
 }
 
+/**
+ * Spec-compliant SSE parser following the WHATWG EventSource algorithm.
+ * Handles \r\n, \n, \r line endings and multi-line data: field accumulation.
+ */
 async function* readSSE(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  const dataLines: string[] = [];
+
+  function dispatch(): string | null {
+    if (dataLines.length === 0) return null;
+    const data = dataLines.join("\n");
+    dataLines.length = 0;
+    return data || null;
+  }
+
+  function processLine(line: string): string | null {
+    if (line.endsWith("\r")) line = line.slice(0, -1);
+    if (line === "") return dispatch();
+    if (line.startsWith(":")) return null;
+
+    const colonIdx = line.indexOf(":");
+    let field: string;
+    let value: string;
+    if (colonIdx === -1) {
+      field = line;
+      value = "";
+    } else {
+      field = line.slice(0, colonIdx);
+      value = line.slice(colonIdx + 1);
+      if (value.startsWith(" ")) value = value.slice(1);
+    }
+
+    if (field === "data") dataLines.push(value);
+    return null;
+  }
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
+      if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary >= 0) {
-        const block = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        for (const line of block.split(/\r?\n/)) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) {
-            continue;
-          }
-          const data = trimmed.slice(5).trim();
-          if (data) {
-            yield data;
-          }
+
+      let lineStart = 0;
+      for (let i = 0; i < buffer.length; i++) {
+        const ch = buffer[i];
+        if (ch === "\n" || ch === "\r") {
+          const line = buffer.slice(lineStart, i);
+          if (ch === "\r" && buffer[i + 1] === "\n") i++;
+          lineStart = i + 1;
+          const event = processLine(line);
+          if (event !== null) yield event;
         }
-        boundary = buffer.indexOf("\n\n");
       }
+
+      if (lineStart > 0) buffer = buffer.slice(lineStart);
     }
 
-    const tail = buffer.trim();
-    if (tail.startsWith("data:")) {
-      yield tail.slice(5).trim();
+    // Flush remaining
+    if (buffer.length > 0) {
+      const event = processLine(buffer);
+      if (event !== null) yield event;
     }
+    const final = dispatch();
+    if (final !== null) yield final;
   } finally {
     reader.releaseLock();
   }

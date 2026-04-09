@@ -7,6 +7,7 @@ export interface ProviderConfig {
   protocol?: string;
   base_url: string;
   api_key: string;
+  provider?: Record<string, unknown>; // OpenRouter provider routing (ignore, order, etc.)
 }
 
 export interface HubConfig {
@@ -22,6 +23,7 @@ export interface Config {
   providers: Record<string, ProviderConfig>;
   llm_provider: string;
   llm_model: string;
+  max_tokens?: number;
   system_prompt: string;
 }
 
@@ -255,6 +257,7 @@ function normalizeProviders(value: unknown): Record<string, ProviderConfig> {
       protocol: asOptionalString(provider.protocol),
       base_url: asString(provider.base_url),
       api_key: asString(provider.api_key),
+      provider: provider.provider as Record<string, unknown> | undefined,
     };
   }
   return providers;
