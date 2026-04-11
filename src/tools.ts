@@ -148,13 +148,41 @@ export function tokenize(input: string): string[] {
   let current = '';
   let inQuote = false;
   let quoteChar = '';
+  let braceDepth = 0; // tracks {} and [] nesting
 
   for (const char of input) {
+    // Inside quotes: collect until matching close quote
     if (inQuote) {
       if (char === quoteChar) {
         inQuote = false;
+        if (braceDepth > 0) {
+          // Inside braces: keep the quote chars as part of JSON
+          current += char;
+        } else {
+          // Top-level quoted string: push without the quote
+          tokens.push(current);
+          current = '';
+        }
       } else {
         current += char;
+      }
+      continue;
+    }
+
+    // Inside braces: collect everything until balanced
+    if (braceDepth > 0) {
+      current += char;
+      if (char === '"' || char === "'") {
+        inQuote = true;
+        quoteChar = char;
+      } else if (char === '{' || char === '[') {
+        braceDepth += 1;
+      } else if (char === '}' || char === ']') {
+        braceDepth -= 1;
+        if (braceDepth === 0) {
+          tokens.push(current);
+          current = '';
+        }
       }
       continue;
     }
@@ -162,6 +190,16 @@ export function tokenize(input: string): string[] {
     if (char === '"' || char === "'") {
       inQuote = true;
       quoteChar = char;
+      continue;
+    }
+
+    if (char === '{' || char === '[') {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      braceDepth = 1;
+      current = char;
       continue;
     }
 
@@ -762,6 +800,15 @@ function parseScalar(value: string): unknown {
   const asNumber = Number(value);
   if (Number.isFinite(asNumber) && value.trim() !== '') {
     return asNumber;
+  }
+
+  // Try JSON object or array
+  if (value.length > 0 && (value[0] === '{' || value[0] === '[')) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      // not valid JSON, fall through to string
+    }
   }
 
   return value;
