@@ -83,11 +83,13 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
 
   // Preserve scroll position when prepending older messages
   const prevScrollHeightRef = useRef(0);
+  const didLoadMoreRef = useRef(false);
 
   // Capture scrollHeight before DOM update when loading more
   useEffect(() => {
     if (isLoadingMore && scrollRef.current) {
       prevScrollHeightRef.current = scrollRef.current.scrollHeight;
+      didLoadMoreRef.current = true;
     }
   }, [isLoadingMore]);
 
@@ -101,8 +103,12 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     }
   }, [messages]);
 
-  // Initial scroll on load
+  // Initial scroll on load (skip after loadMore)
   useEffect(() => {
+    if (didLoadMoreRef.current) {
+      didLoadMoreRef.current = false;
+      return;
+    }
     if (messages.length > 0 && !userHasScrolledUp) {
       scrollToBottom();
     }
