@@ -1,6 +1,6 @@
 {
   "name": "@pinix/agent",
-  "version": "0.4.5",
+  "version": "0.6.8",
   "description": "AI Agent — agentic loop with shell, packages, and memory",
   "type": "module",
   "scripts": {
