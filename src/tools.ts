@@ -723,8 +723,19 @@ function registerSingleClipCommand(registry: Registry, clip: RuntimeClipInfo): v
         return formatClipInfo(clip);
       }
 
-      const command = args[0];
-      const input = buildClipInvokeInput(args.slice(1), stdin);
+      // Greedy match for sub-commands: try "schema list" before "schema"
+      const cmdNames = new Set((clip.commands ?? []).map((c) => c.name));
+      let command = args[0];
+      let restArgs = args.slice(1);
+      if (args.length > 1) {
+        const twoWord = `${args[0]} ${args[1]}`;
+        if (cmdNames.has(twoWord)) {
+          command = twoWord;
+          restArgs = args.slice(2);
+        }
+      }
+
+      const input = buildClipInvokeInput(restArgs, stdin);
 
       try {
         const result = await invokeClip(clip.name, command, input);
@@ -733,7 +744,7 @@ function registerSingleClipCommand(registry: Registry, clip: RuntimeClipInfo): v
         }
         return JSON.stringify(result, null, 2);
       } catch (error) {
-        const hint = getCommandUsageHint(clip, command);
+        const hint = getCommandUsageHint(clip, command) ?? getCommandUsageHint(clip, args[0]);
         if (hint) {
           throw new Error(`${toErrorMessage(error)}\n\n${hint}`);
         }
